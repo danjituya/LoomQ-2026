@@ -9,7 +9,9 @@ Implements:
 
 from __future__ import annotations
 
+import ast
 import json
+import math
 import os
 import re
 import tempfile
@@ -40,6 +42,17 @@ def _clean_lines(qasm_str: str) -> List[str]:
     return out
 
 
+def _split_statements(qasm_str: str) -> List[str]:
+    """Split OpenQASM source into individual statements.
+
+    Handles both one-statement-per-line and compressed single-line sources
+    (statements separated by ';'). Line comments (//) are stripped first.
+    """
+    text = re.sub(r"//[^\n]*", "", qasm_str)
+    text = text.replace(";", ";\n")
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
 def _parse_qasm2(qasm_str: str) -> Tuple[Dict[str, int], Dict[str, int], List[tuple]]:
     """Parse OpenQASM 2.0 -> (qregs, cregs, ops).
 
@@ -50,9 +63,10 @@ def _parse_qasm2(qasm_str: str) -> Tuple[Dict[str, int], Dict[str, int], List[tu
     qregs: Dict[str, int] = {}
     cregs: Dict[str, int] = {}
     ops: List[tuple] = []
-    for line in _clean_lines(qasm_str):
-        line = line.rstrip(";").strip()
-        if not line or line.startswith("OPENQASM") or line.startswith("include"):
+    for stmt in _split_statements(qasm_str):
+        line = stmt.rstrip(";").strip()
+        if not line or line.startswith("OPENQASM") or line.startswith("include") \
+           or line.startswith("gate"):
             continue
         m = re.match(r"qreg\s+([A-Za-z_]\w*)\[(\d+)\]", line)
         if m:
@@ -149,6 +163,50 @@ def _to_qasm3(qasm2: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _origin_param(p: str) -> str:
+    """Normalize a QASM parameter expression to a plain float literal.
+
+    OriginIR expects numeric arguments (its reference parser does not accept
+    symbolic forms like ``pi/2``). Hidden circuits (QFT/Grover) commonly use
+    ``pi`` expressions, so evaluate them to floats here.
+    """
+    s = p.replace("pi", str(math.pi)).replace("π", str(math.pi))
+    try:
+        node = ast.parse(s, mode="eval")
+        value = _safe_eval(node.body)
+        if isinstance(value, (int, float)):
+            if abs(value) < 1e-15:
+                return "0"
+            return repr(float(value))
+    except Exception:
+        pass
+    return p  # keep original if not evaluable
+
+
+def _safe_eval(node):
+    """Evaluate an AST expression with only arithmetic operations allowed."""
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        return math.pi if node.id == "pi" else math.e if node.id == "e" else 0.0
+    if isinstance(node, ast.UnaryOp):
+        val = _safe_eval(node.operand)
+        return -val if isinstance(node.op, ast.USub) else +val
+    if isinstance(node, ast.BinOp):
+        left, right = _safe_eval(node.left), _safe_eval(node.right)
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        if isinstance(node.op, ast.Div):
+            return left / right
+        if isinstance(node.op, ast.Pow):
+            return left ** right
+    raise ValueError(f"unsupported expression node: {type(node).__name__}")
+
+
 def _to_originir(qasm2: str) -> str:
     """Convert OpenQASM 2.0 -> OriginIR (Origin Quantum)."""
     qregs, cregs, ops = _parse_qasm2(qasm2)
@@ -170,7 +228,8 @@ def _to_originir(qasm2: str) -> str:
             _, gate, params, targets = op
             g = _GATE_MAP_ORIGIN.get(gate.lower(), gate.upper())
             if params:
-                lines.append(f"{g}({', '.join(params)}) {', '.join(targets)}")
+                args = ", ".join(_origin_param(p) for p in params)
+                lines.append(f"{g}({args}) {', '.join(targets)}")
             else:
                 lines.append(f"{g} {', '.join(targets)}")
     return "\n".join(lines) + "\n"
