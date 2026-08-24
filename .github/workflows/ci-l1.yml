@@ -62,6 +62,10 @@ jobs:
       - name: Run L3 random fuzz (200 cases x exhaustive injection)
         run: python tests/l3_fuzz.py 200 42
 
+      - name: Run QRVE Bonus tests (6 E2E + 4 built-in)
+        working-directory: starter_kit
+        run: python test_qrve_bonus.py
+
       - name: Run public evaluator L1 (braket,originq) + L3
         run: |
           python starter_kit/evaluator.py --level l1 --target braket,originq

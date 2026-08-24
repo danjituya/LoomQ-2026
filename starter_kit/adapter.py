@@ -830,6 +830,70 @@ def agent_chat(prompt: str) -> str:
             backend_id = "braket_local_simulator"
         return backend_id
 
+    # ---- Layer 0.5: L3 Hybrid-QASM keyword routing ---------------------
+    # 命中 ≥2 个 L3 特征词 → 用户要的是"混合编译"（量子+经典控制），
+    # 不是纯量子电路合成：直接走 compile_hybrid，避免被当作 L2 请求
+    # 返回 Bell 态模板（队友 3.0 思路，已修正：去掉 mul 强制，LLM 生成
+    # prompt 严格按手册文法 + - == != / if-else / 顺序赋值）。
+    _l3_keywords = [
+        re.compile(r"classical\s*\{"),
+        re.compile(r"hybrid[\s-]?qasm", re.IGNORECASE),
+        re.compile(r"混合(?:编译|qasm|量子)?", re.IGNORECASE),
+        re.compile(r"risc-?v|rv32|riscv", re.IGNORECASE),
+        re.compile(r"嵌套\s*if|if-else|if\s+else"),
+        re.compile(r"经典\s*(?:比特|寄存器|位)"),
+    ]
+    _l3_hit = sum(1 for rx in _l3_keywords if rx.search(prompt))
+    if _l3_hit >= 2:
+        _hybrid_qasm_src = _extract_qasm_block(prompt) or ""
+        _l3_err = None
+        if not _hybrid_qasm_src:
+            _l3_prompt = (
+                "请输出一段合法的 LoomQ Hybrid-QASM，只输出代码（不要多余解释）。"
+                "要求：包含 qreg + creg + 至少一个 classical { ... } 代码块；"
+                "classical 块内使用手册文法：整数字面量、寄存器 r1..r9、"
+                "运算符 + - == !=、if/else 与顺序赋值。严格按此模板：\n"
+                "```qasm\nOPENQASM 2.0;\ninclude \"qelib1.inc\";\n"
+                "qreg q[2];\ncreg c[2];\nh q[0];\ncx q[0],q[1];\n"
+                "measure q[0] -> c[0];\nmeasure q[1] -> c[1];\n"
+                "classical {\n  if (c[0]==1) {\n    if (c[1]==0) { r1 = 2 + 3; } else { r1 = 0; }\n  } else { r1 = 1; }\n}\n```\n"
+                "根据下面这个用户需求定制：\n\n" + prompt
+            )
+            _msgs_l3 = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": _l3_prompt},
+            ]
+            try:
+                _llm_hybrid_raw = call(_msgs_l3)
+                _hybrid_qasm_src = _extract_qasm_block(_llm_hybrid_raw) or ""
+            except Exception as _e:  # noqa: BLE001
+                _l3_err = str(_e)
+        _hybrid_qasm = _hybrid_qasm_src.strip() if _hybrid_qasm_src else ""
+        if _hybrid_qasm:
+            try:
+                _q_ops, _riscv_asm = compile_hybrid(_hybrid_qasm)
+                reply = (
+                    "```qasm\n" + _hybrid_qasm.strip() + "\n```\n\n"
+                    "### 编译结果\n\n"
+                    "**量子操作序列**（" + str(len(_q_ops)) + " 条）：\n"
+                    + "`" + "; ".join(_q_ops) + "`\n\n"
+                    + "**RISC-V 汇编**（经典控制逻辑，可在官方 riscv_emulator.py 运行）：\n"
+                    + "```riscv\n" + _riscv_asm.strip() + "\n```\n"
+                )
+                return reply
+            except Exception as _e:  # noqa: BLE001
+                _l3_err = str(_e)
+        return (
+            "（L3 Hybrid-QASM 编译暂不可用："
+            + (_l3_err or "LLM 未生成可解析的 Hybrid-QASM")
+            + "。请直接粘贴完整 Hybrid-QASM 源码（含 classical { ... } 块），"
+            + "我会立刻编译为量子操作序列 + RISC-V 汇编。示例：\n\n"
+            + "```qasm\nOPENQASM 2.0;\ninclude \"qelib1.inc\";\n"
+            + "qreg q[2];\ncreg c[2];\nh q[0];\ncx q[0],q[1];\n"
+            + "measure q[0] -> c[0];\nmeasure q[1] -> c[1];\n"
+            + "classical { if (c[0]==1) { r1 = 10; } else { r1 = 20; } }\n```\n"
+        )
+
     # ---- Layer 0b: code-fix prompts. Re-classify the *intended target state*
     # by stripping fix-keywords and re-running classify. If still ambiguous,
     # drop into the LLM fix prompt + structured repair below.
