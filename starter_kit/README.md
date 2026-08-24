@@ -42,10 +42,10 @@ from starter_kit import adapter
 
 ## 环境
 
-公开 evaluator 只使用 Python 标准库，无需安装依赖。推荐 Python 3.10，与官方基础镜像一致（spinqit 最高只提供 cp310 wheel）：
+公开 evaluator 只使用 Python 标准库，无需安装依赖。推荐 Python 3.10，与官方基础镜像一致（spinqit 最高只提供 cp310 wheel，且其依赖链与 amazon-braket-sdk/pyqpanda 冲突，本仓库按 requirements.txt 故意不装 spinqit；因此 L1 双后端验证用 braket,originq）：
 
 ```bash
-python3 evaluator.py --level l1 --target spinq,originq --json-out report.json
+python3 evaluator.py --level l1 --target braket,originq --json-out report.json
 ```
 
 参赛项目使用第三方 SDK 时，必须把依赖写入 `requirements.txt` 并精确锁定版本，例如 `package==1.2.3`。不要提交 `package>=1.2`，正式评测不会替参赛队选择依赖版本。
@@ -84,7 +84,7 @@ def compile_hybrid(hybrid_qasm_str: str) -> tuple[list, str]: ...
 python3 evaluator.py --json-out report.json
 
 # 单独测试
-python3 evaluator.py --level l1 --target spinq,originq,braket
+python3 evaluator.py --level l1 --target braket,originq
 python3 evaluator.py --level l2
 python3 evaluator.py --level l3
 ```

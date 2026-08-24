@@ -62,6 +62,9 @@ jobs:
       - name: Run Round2 patch check (CRY/CRX/CRZ + 中文纠缠)
         run: python tests/round2_patch_check.py
 
+      - name: Run L2 review P0 checks (quantifier misparse + backend false positive)
+        run: python tests/l2_review_p0_check.py
+
       - name: Run L3 random fuzz (200 cases x exhaustive injection)
         run: python tests/l3_fuzz.py 200 42
 
