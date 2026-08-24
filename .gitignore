@@ -55,3 +55,4 @@ l2_zero_result.json
 # IDE
 .idea/
 _manual_text.txt
+_nl_batch_run.py
