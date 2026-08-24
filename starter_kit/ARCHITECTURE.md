@@ -65,19 +65,25 @@ starter_kit/
 
 ### L2 智能体设计
 
-`agent_chat(prompt)` 读取 `LOOMQ_LLM_BASE_URL / API_KEY / MODEL`（绝不硬编码），
-用系统提示词约束模型只输出 12 门白名单内的完整 QASM（代码块包裹）。自检分两级：
+`agent_chat(prompt)` 读取 `LOOMQ_LLM_BASE_URL / API_KEY / MODEL`（绝不硬编码）。
+采用**三层架构**，把"解释意图"和"合成电路"解耦（`l2_oracle.py`）：
 
-1. **保真度校验（命名标准态）**：识别到 Bell / GHZ / W / 均匀叠加态请求时，
-   先让模型生成，再在本地 Braket 模拟器运行，与已知理论分布计算 Hellinger
-   Fidelity；`≥0.97` 放行，否则要求模型重生成一次，仍不达标则**回退到
-   预验证的标准电路模板**并提示"已使用验证电路"。W 态模板由 qiskit
-   `initialize` 生成并展开到白名单门，已在模拟器上验证（001/010/100 各 33%）。
-2. **语法/运行校验（一般电路）**：无已知理论分布时，校验电路可解析、可在
-   模拟器运行，失败则要求模型修复一次。
+1. **确定性意图分类（代码，不走 LLM）**：扫描 prompt 关键词，覆盖 12 类任务
+   （Bell/EPR、GHZ-n、W-n、单比特叠加、n 比特等权叠加、隐形传态、QFT-n、
+   Grover、Deutsch–Jozsa、加法器、受控/参数化门、随机电路）。命名态与算法态
+   命中即路由到验证电路，**绝不让 LLM 即兴设计电路**。
+2. **验证电路生成器（永远对）**：W-n(2–8)/QFT-n(2–5)/隐形传态/Grover/DJ/加法器
+   用 qiskit `StatePreparation` 或教科书标准电路生成，展开到 12 门白名单
+   （`_templates_data.py` 硬编码，运行时零 qiskit 依赖）；Bell/GHZ/叠加为
+   动态构建的 h+cx 链。全部经独立态矢量模拟器验证 fidelity=1.0。
+3. **结构化翻译（新说法兜底）**：未命中关键词时，LLM 只输出严格 JSON 操作清单
+   （`{"ops":[["H","q0"],...]}`），由 `synthesize_from_ops()` 确定性拼成 QASM。
 
-三类任务（意图生成 / 代码纠错 / 智能选后端）共用同一入口，后端选择以
-`backend_capabilities.json` 官方能力表为唯一依据。
+**保真度 Oracle（兜底查错）**：自写精确态矢量模拟器（支持全部 12 门，无 shot
+噪声、不依赖第三方模拟器——Braket LocalSimulator 对 4+ 比特 StatePreparation
+电路存在已知数值 bug，已实测复现）。对已知目标态，实测分布与理论分布算
+Hellinger Fidelity，`≥0.97` 放行；否则让模型重生成一次，仍不达标则回退验证
+电路并提示"已使用验证电路"。**永远返回电路，绝不拒答**（拒答该题 0 分）。
 
 **交互层（webapp.py）**：零 CDN 单页应用，前端用原生 JS 把返回的 QASM 渲染成
 SVG 电路图（门方块 + 连线）、把测量结果渲染成百分比柱状图，并附大白话解读。

@@ -70,7 +70,7 @@ def _explain_counts(counts: dict, n_qubits: int) -> str:
     top_str = "、".join(f"{k}（{v/total*100:.0f}%）" for k, v in top)
     if len(top) == 1 or abs(top[0][1] - top[1][1]) / total < 0.06:
         return (
-            f"测量结果高度集中在 {top_str} 附近。这类「确定性叠加」状态（如 GHZ / Bell 态）"
+            f"测量结果高度集中在 {top_str} 附近。这类最大纠缠态（如 GHZ / Bell 态）"
             "正是量子计算最经典的入门实验——你刚才让一个量子系统进入了两个状态的叠加，"
             "并在测量时「坍缩」到了其中一种。"
         )

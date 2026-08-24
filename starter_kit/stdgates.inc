@@ -11,7 +11,7 @@ gate sdg a { inv @ pow(1/2) @ z a; }
 gate t a { pow(1/2) @ s a; }
 gate tdg a { inv @ pow(1/2) @ s a; }
 gate ry(theta) a { U(theta, 0, 0) a; }
-gate rz(lambda) a { gphase(-lambda/2); U(0, 0, lambda) a; }
+gate rz(lambda) a { U(0, 0, lambda) a; }
 gate cnot a, b { ctrl @ x a, b; }
 gate cx a, b { ctrl @ x a, b; }
 gate cp(lambda) a, b { ctrl @ phaseshift(lambda) a, b; }
