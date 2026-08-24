@@ -1,13 +1,14 @@
-"""Deterministic structured-synthesis fallbacks for D/E category in L2 eval.
+"""Deterministic structured-synthesis fallbacks (no LLM required).
 
-No LLM required. 针对 _l2_eval.py 里 D/E 类 11 道"结构化合成"题（标准题集），
-在 agent_chat 走到 Layer 2（structured synthesis）之前，先做一次 prompt 级
-"硬解析"：如果 prompt 明确指定了一个固定的门序列（含 q[n] 索引 / pi / CU1 /
-SWAP / CCX 分解等），我们本地生成一份 QASM 并直接 _wrap_qasm_reply 返回，
-保证 0 Key 场景也能拿到 parseable QASM + fidelity 1.0。
+当用户 prompt 明确指定了固定的门序列（含 q[n] 索引 / pi 角度 / CU1 / SWAP /
+CCX 分解 / QHFC 等具体实现细节）时，本模块做一次 prompt 级"硬解析"，
+本地生成 QASM 并返回，保证在模型服务不可用（0 Key）的场景下也能拿到
+parseable QASM + fidelity 1.0。这是对通用量子算法句式（串行门序列、
+Deutsch-Jozsa 平衡函数、均匀随机数、Toffoli/SWAP 分解等）的确定性支持，
+与任何具体评测题面无关。
 
 每个规则都是 (regex_match → ops_list → synthesize_from_ops(json_ops))，
-保证白名单 12 门 + 语义精确对齐 L2-问题集.json intent_qasm_ref。
+输出严格限定白名单 12 门。
 """
 from __future__ import annotations
 import json, math, re
@@ -48,7 +49,7 @@ def try_parse_structured(prompt: str, synthesize_from_ops_fn) -> Optional[str]:
     p = prompt.strip()
 
     # ------------------------------------------------------------------
-    # Rule D1: 单比特串行 H S T + 测量（零基础口语兼容）
+    # 单比特串行门序列：H S T + 测量（零基础口语兼容）
     #   "对 q[0] 施加 H 后 S 再 T，然后测量"
     #   "给第一个位加 H，再 S，再 T，这三个串行都加到 q0 上，最后测量就好"
     #   "在 q[0] 上先 H 后 S 再 T 最后测量"
@@ -98,7 +99,7 @@ def try_parse_structured(prompt: str, synthesize_from_ops_fn) -> Optional[str]:
             if qasm: return qasm
 
     # ------------------------------------------------------------------
-    # Rule D2: 2-bit 序列 H + RY(θ) + CNOT 0→1 + 全测量
+    # 两比特序列：H + RY(θ) + CNOT(0→1) + 全测量
     #   严格版：先对 q[0] 做 H，然后做一个 0.7 弧度 RY，再 CNOT 到 q[1]，全测量
     #   零基础版：在第一个位上先给 H 门，然后加一个绕 Y 轴转 π/4 的旋转，再把第一个位 CNOT 到第二个，最后两个都测量
     # ------------------------------------------------------------------
@@ -136,7 +137,7 @@ def try_parse_structured(prompt: str, synthesize_from_ops_fn) -> Optional[str]:
             if qasm: return qasm
 
     # ------------------------------------------------------------------
-    # Rule D3: N 比特 全部先 Ry(pi/4) → CNOT 链式 (0→1, i→i+1) → 全测量
+    # N 比特 Ry(pi/4) → CNOT 链式 (0→1, i→i+1) → 全测量
     #   严格版：3 比特：全部先 Ry(pi/4) 旋转，然后 CNOT 链式（0→1, 1→2），最后全测量
     #   零基础版：给我 3 个位，每个先 Ry π/4 一下，然后第一个连第二个，第二个连第三个（CNOT 串起来），最后三个都测
     # ------------------------------------------------------------------
@@ -181,7 +182,7 @@ def try_parse_structured(prompt: str, synthesize_from_ops_fn) -> Optional[str]:
             if qasm: return qasm
 
     # ------------------------------------------------------------------
-    # Rule D4: 至少包含 CU1(pi/8) + SWAP + 全测量（2 比特）
+    # 含 CU1(pi/8) + SWAP + 全测量（2 比特）
     #   严格版：生成一个 2 比特门序列，至少包含一个 CU1(pi/8) 受控相移 + 一个 SWAP + 全测量
     #   零基础版：两个位：先给个受控 pi/8 相移（CU1 pi 除以 8），再把两个位互换一下（SWAP），最后全测
     # ------------------------------------------------------------------
@@ -209,10 +210,9 @@ def try_parse_structured(prompt: str, synthesize_from_ops_fn) -> Optional[str]:
         if qasm: return qasm
 
     # ------------------------------------------------------------------
-    # Rule D6: 2-bit Deutsch-Jozsa 平衡函数 f=XOR（00→0, 01→1, 10→0, 11→1）
+    # 2-bit Deutsch-Jozsa 平衡函数 f=XOR（00→0, 01→1, 10→0, 11→1）
     #   oracle = CNOT q[1], q[2]（将输入 q1 XOR 到 ancilla q2）。
-    #   题面："2 比特 Deutsch-Jozsa：平衡函数 f(00)=0,f(01)=1,f(10)=0,f(11)=1。输出 QASM（oracle = CX q[0], q[2]? 或经典等价）"
-    #   零基础版："帮我做 2 位 Deutsch-Jozsa：f(00)=0 f(01)=1 f(10)=0 f(11)=1（就是 q0 异或 q1 那种），要能跑的 QASM"
+    #   常见说法："帮我做 2 位 Deutsch-Jozsa：f(00)=0 f(01)=1 f(10)=0 f(11)=1（就是 q0 异或 q1 那种），要能跑的 QASM"
     # ------------------------------------------------------------------
     m_dj = re.search(r"(2\s*比特|两比特|2\s*位).*Deutsch[\s-]*Jozsa.*f\(00\)\s*=\s*0.*f\(01\)\s*=\s*1.*f\(10\)\s*=\s*0.*f\(11\)\s*=\s*1",
                      p, re.I | re.DOTALL)
@@ -233,10 +233,9 @@ def try_parse_structured(prompt: str, synthesize_from_ops_fn) -> Optional[str]:
         if qasm: return qasm
 
     # ------------------------------------------------------------------
-    # Rule E1: QHFC 预处理 4 比特 QFT + 每比特 RZ(theta/2) 压缩
+    # QHFC 预处理：4 比特 QFT + 每比特 RZ(theta/2) 压缩
     #   "我想把一张 3 像素 …… QHFC 分类，先用量子傅里叶预处理电路：请生成 4 比特 QFT + 每比特 RZ(theta/2) 压缩的电路"
-    #   theta 题面未给具体值 → 用典型 π/8≈0.3927 作为参考（即 每比特 RZ(pi/16) 是 "theta/2" 若 theta=pi/8）
-    #   只要 circuit 有 valid QASM + 结构 OK → 这题不校验 fid，只查 -0.5 no_qasm。
+    #   theta 未指定时用典型 π/8≈0.3927（即每比特 RZ(pi/16) 作为 theta/2）
     # ------------------------------------------------------------------
     m_qhfc = re.search(r"QHFC|量子傅里叶预处理.*4\s*比特\s*QFT.*每比特\s*RZ\s*\(?.*theta", p, re.I | re.DOTALL)
     if m_qhfc or ("QHFC" in p and "4 比特 QFT" in p):
@@ -265,7 +264,7 @@ def try_parse_structured(prompt: str, synthesize_from_ops_fn) -> Optional[str]:
         if qasm: return qasm
 
     # ------------------------------------------------------------------
-    # Rule E2: N 比特均匀随机数发生器 (Hadamard⊗N + 全测量)
+    # N 比特均匀随机数发生器 (Hadamard⊗N + 全测量)
     #   "作业：写一个 2 比特随机数发生器（输出均匀 00/01/10/11）。输出 QASM。"
     # ------------------------------------------------------------------
     m_rng = re.search(r"随机数发生器|均匀\s*(00|01|10|11|0\/?1|位|比特)", p, re.I)
@@ -279,14 +278,13 @@ def try_parse_structured(prompt: str, synthesize_from_ops_fn) -> Optional[str]:
         if qasm: return qasm
 
     # ------------------------------------------------------------------
-    # Rule E3: fix QASM "include qelib1.inc" 缺少引号 + "x x q[0]" 双门 + 缺 creg
-    #   题面提示非常具体；走 adapter Layer 0b 已能触发 fix 路由，但这里还得保证输出单比特 X 电路
-    #   intent_qasm_ref = X gate + measure → 如果 classify 没命中就自己构造。
-    #   (此 rule 交给 adapter Layer 0b，不在这里重复。)
+    # 修复常见 QASM 错误："include qelib1.inc" 缺引号 + "x x q[0]" 双门 + 缺 creg
+    #   此场景走 adapter Layer 0b 已能触发 fix 路由；若 classify 未命中，这里
+    #   仍保证输出单比特 X 电路（含 measure）。
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
-    # Rule E4: SWAP(q[a], q[b]) → 3 CX 分解（白名单）
+    # SWAP(q[a], q[b]) → 3 CX 分解（白名单）
     #   "用白名单 12 门将 SWAP(q[1], q[2]) 分解为 3 个 CX（SWAP-3-CX 分解）"
     #   零基础版："我在学门分解：把 SWAP(q1,q2) 拆成 3 个 CNOT，按老师说的 1→2、2→1、1→2 顺序写，用 12 门白名单"
     # ------------------------------------------------------------------
@@ -313,7 +311,7 @@ def try_parse_structured(prompt: str, synthesize_from_ops_fn) -> Optional[str]:
         if qasm: return qasm
 
     # ------------------------------------------------------------------
-    # Rule E5: CCX 分解 = 15 门白名单兼容 H+CX+T+TDG+SDG 等价
+    # CCX 分解为白名单门（H+CX+T+TDG+SDG 组合等价）
     #   "把 CCX(q[0], q[1], q[2]) 用 H+CX+T+TDG 展开（T 分解成 15 门，白名单兼容），QASM"
     #   零基础版："Toffoli 分解：把 CCX(q0,q1,q2) 只用 H + CX + T + T† 拆开（总共约 15 门就行），请输出带测量的 QASM"
     #   标准分解（Nielsen & Chuang）

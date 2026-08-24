@@ -43,6 +43,9 @@ jobs:
       - name: Run 12x2 gate matrix vs exact oracle
         run: python tests/l1_gate_matrix.py
 
+      - name: Run Random-Circuit x3 fidelity (braket,originq, >=0.97)
+        run: python tests/random_circuit_check.py
+
       - name: Run L2 template validator (zero-dependency)
         working-directory: starter_kit
         run: python verify_l2.py
