@@ -410,7 +410,8 @@ def classify(prompt: str):
     if re.search(
         r"选.*平台|选.*后端|选.*量子.*机|选.*(机器|设备|模拟器)|"
         r"推荐.*平台|推荐.*后端|推荐.*(设备|量子.*机|机器|真机|模拟器)|"
-        r"哪个.*(平台|后端|量子.*机|真机|设备|模拟器)|跑这个.*选.*|用哪个|"
+        r"哪个.*(平台|后端|量子.*机|真机|设备|模拟器)|跑这个.*选.*|"
+        r"用哪个\s*(跑|来跑|运行|执行|提交|能跑|可以做|平台|后端|模拟器|设备|量子机|真机)|"
         r"帮我选.*(量子|平台|后端|设备|机器|模拟器)|"
         r"which\s*(backend|platform|simulator|device|machine|qpu|chip)|"
         r"(recommend|suggest|pick|choose)\s*(me\s*)?(a|an|the\s*)?\s*(backend|platform|simulator|device|machine|qpu)\b|"
@@ -511,15 +512,29 @@ def classify(prompt: str):
                          r"正.*反.*各一半.*电路|一半.*一半.*(量子|电路|比特)")
     _UNIFORM_HINT = (r"等概率.*(分布|结果|测量|输出)|均匀.*(叠加|态|分布)|所有.*等概率|"
                      r"全.*(叠加|h.*门|hadamard)|每.*(叠加|h.*门|hadamard)|"
-                     r"全测量.*(叠加|均匀|等概率)")
+                     r"全测量.*(叠加|均匀|等概率)|随机数|随机输出|随机结果|随机出|"
+                     r"随机(性|序列|比特串)|等概率输出|随机生成")
     if ("叠加" in prompt or "superposition" in p or
             re.search(_UNIFORM_HINT, p) or
             ("均匀" in p and not re.search(r"压缩|rz\(|qft", p)) or
             re.search(_SINGLESUPER_HINT, p)):
-        # 单比特：明确 1 位 / 一枚硬币 / 单个 / 0|1 随机
+        # 单比特：明确 1 位 / 一枚硬币 / 单个 / 0|1 随机 / 丢·抛·扔·掷硬币
         singles = bool(re.search(r"(单|一|1).*(比特|qubit|位|硬币|枚)|1\s*(量子|比特)|"
-                                 r"(单个|一枚).*(硬币|比特)|随机出\s*[0\/\|]?\s*1\s*[或、和\/\|]?\s*0\b",
+                                 r"(单个|一枚).*(硬币|比特)|随机出\s*[0\/\|]?\s*1\s*[或、和\/\|]?\s*0\b|"
+                                 r"(?:丢|抛|扔|掷)\s*(?:一个|一枚)?\s*硬币(?!.*(?:两|双|二|三|四|五|六|七|八)\s*枚)",
                                  p, re.IGNORECASE))
+        # 量词误判防护："给我一个 6 比特的均匀随机输出" 里的 "一个" 是量词，
+        # 不是"1 比特"。当存在显式数字 N>=2 且为"一/1 + 个? + 数字 + 单位"结构、
+        # 又无明确单数表述（单个/一枚/单比特/1 比特）时，强制视为非单数。
+        if np_ is not None and np_ >= 2:
+            _quant_num = re.search(
+                r"(?:一|1)\s*个?\s*\d+\s*(?:比特|位|qubit|量子位)", p, re.IGNORECASE
+            )
+            _explicit_single = re.search(
+                r"(?:单个|一枚|单比特|1\s*(?:比特|量子位|qubit)\b)", p, re.IGNORECASE
+            )
+            if _quant_num and not _explicit_single:
+                singles = False
         if "单比特" in p or singles:
             n = 1
         else:

@@ -1194,11 +1194,18 @@ def agent_chat(prompt: str) -> str:
         return _wrap_qasm_reply(qasm)
     # Never return an empty reply (empty = that case fails outright).
     # Graceful degradation: when the model call errored AND no rule matched,
-    # still hand back a minimal valid circuit (1-qubit superposition) with a
-    # plain-language note so the reply is always parseable and runnable.
+    # still hand back a minimal valid circuit with a plain-language note so
+    # the reply is always parseable and runnable. Honour an explicit qubit
+    # count if the prompt carries one ("用 5 个量子比特生成随机数" -> 5
+    # qubits, not the 1-qubit default).
+    try:
+        _fb_n = l2_oracle._num_from(prompt, l2_oracle._QUBIT_NUM_PATTERNS)
+    except Exception:
+        _fb_n = None
+    _fb_n = max(_fb_n or 1, 1)
     return _wrap_qasm_reply(
-        l2_oracle.superposition_qasm(1),
-        "（未能完全理解你的请求；已返回最基础的量子叠加演示电路，"
+        l2_oracle.superposition_qasm(_fb_n),
+        f"（未能完全理解你的请求；已返回 {_fb_n} 比特的量子叠加演示电路，"
         "可直接在此基础上继续修改）",
     )
 
