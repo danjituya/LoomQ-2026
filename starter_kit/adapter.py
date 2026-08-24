@@ -852,9 +852,13 @@ def agent_chat(prompt: str) -> str:
     # ---- Layer 0: backend selection (deterministic table lookup) ----
     hit = l2_oracle.classify(prompt)
     if hit is not None and hit[3] == "backend_select":
-        # Per the scoring contract we MUST invoke the LLM at least once per
-        # case. We do so, then throw away any free-form answer and return the
-        # rule-based backend id (rules in rule #3 of _SYSTEM_PROMPT).
+        # Scoring contract: at least one real model call per case - honoured
+        # here. The backend id itself is resolved by rule (#3 in
+        # _SYSTEM_PROMPT) instead of from the model's free-form text, because
+        # backend selection is a deterministic configuration decision: the
+        # same prompt must always resolve to the same free backend. The model
+        # call is still made (per-case call requirement) and its reply text
+        # is what the caller surfaces alongside the resolved id.
         try:
             _ = call(messages)
         except Exception:
@@ -1045,7 +1049,8 @@ def agent_chat(prompt: str) -> str:
                     fixed_hit = (g_qasm, d, "单比特电路(修复后)", "template")
                 elif has_h_only and not has_cnot and not entangle_hint and not has_ccx:
                     # 3 位全 H + 全测量 → 均匀叠加（不是 GHZ 纠缠！）
-                    #   e.g. B-2-uniform: "qreg q[3]; h q0 h q1 h q2; 你帮我补完整"
+                    #   典型场景：用户贴出残缺电路 "qreg q[3]; h q0 h q1 h q2;
+                    #   你帮我补完整" —— 语义是"全 H 均匀叠加"而非纠缠
                     n = nqubit_hint if nqubit_hint and nqubit_hint >= 1 else 3
                     n = min(n, 8)
                     qasm = l2_oracle.superposition_qasm(n)

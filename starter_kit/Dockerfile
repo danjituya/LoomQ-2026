@@ -13,4 +13,4 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
-CMD ["python", "evaluator.py", "--json-out", "/tmp/loomq-public-report.json"]
+CMD ["python", "evaluator.py", "--target", "braket,originq", "--json-out", "/tmp/loomq-public-report.json"]
