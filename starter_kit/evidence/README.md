@@ -8,7 +8,7 @@
 - [x] L2 交互体验
 - [x] 工程与产品化
 - [ ] 自定义量子 RISC-V Bonus
-- [ ] 新手引导与视觉叙事 Bonus
+- [x] 新手引导与视觉叙事 Bonus
 
 ---
 
@@ -19,15 +19,18 @@
 ## L2 交互体验
 
 ```text
-启动界面或 CLI 的命令：python starter_kit/cli.py
-测试入口或页面地址：无（终端 CLI）
+启动界面或 CLI 的命令：
+  python starter_kit/webapp.py     # 打开 http://127.0.0.1:8765
+  python starter_kit/cli.py        # 备用：终端对话版
+测试入口或页面地址：http://127.0.0.1:8765（本机 Web 界面）
 用于交互体验评测的 3 个用户任务：
-1. 零基础用户输入"生成一个 3 比特 GHZ 态并进行全测量"，Agent 返回可直接运行的
-   OpenQASM 2.0 电路，且经无噪声模拟器验证 Fidelity ≥ 0.97。
-2. 用户粘贴一段报错电路（如大小写错误/未定义寄存器）并声明目标态，Agent 识别
-   错误、保持意图修复并返回完整可运行电路。
-3. 用户提问"15 比特电路且零排队，选哪个平台？"，Agent 依据官方后端能力表
-   （backend_capabilities.json）返回唯一正确后端标识。
+1. 零基础用户点首页示例按钮「生成 3 比特 GHZ 态」，智能体返回可运行的
+   OpenQASM 2.0 电路，页面自动渲染电路图 + 测量柱状图（000/111 约各 50%），
+   并以大白话解释「叠加与坍缩」。
+2. 用户粘贴一段报错电路（大小写错误/未定义寄存器）并声明目标态，智能体识别
+   错误、保持意图修复并返回电路图与结果。
+3. 用户提问「15 比特电路且零排队，选哪个平台？」，智能体依据官方后端能力表
+   返回唯一正确后端标识（braket_local_simulator）。
 ```
 
 前置条件（与官方 L2 协议一致，代码不硬编码任何凭据）：
@@ -36,12 +39,14 @@
 export LOOMQ_LLM_BASE_URL=<OpenAI-compatible API 根地址>
 export LOOMQ_LLM_API_KEY=<key>
 export LOOMQ_LLM_MODEL=deepseek-v4-flash
-python starter_kit/cli.py
+python starter_kit/webapp.py
 ```
 
-交互体验说明：CLI 以中文提示引导，包含示例指令；模型回答原样展示；
-单次调用异常不会导致会话崩溃。`agent_chat()` 内置"生成 → 自验 → 重试"闭环，
-能拦截语法/运行错误并向模型请求修复，新手不需要理解错误信息。
+交互体验说明：Web 界面为**零外部依赖单页应用**（无 CDN、无外网请求），
+新手三步即可完成第一个量子实验：点示例 → 看智能体回答 → 看电路图与结果柱状图。
+页面内置「30 秒量子入门」折叠卡片，覆盖量子比特/叠加/纠缠/测量结果解读。
+`agent_chat()` 内置「生成 → 自验 → 重试」闭环，语法错误会自动请求模型修复，
+新手无需理解错误信息。
 
 ## 工程与产品化
 
@@ -52,6 +57,7 @@ python starter_kit/cli.py
   pip install -r starter_kit/requirements.txt
   python starter_kit/evaluator.py --level l1 --target braket,originq
   python starter_kit/evaluator.py --level l3
+  python starter_kit/webapp.py      # 交互入口
 架构说明：starter_kit/ARCHITECTURE.md
 目标用户和使用场景：不会写代码、无量子物理背景、不愿注册量子云账号的跨界创作者，
   用自然语言第一次驱动真实量子计算。
@@ -64,7 +70,15 @@ python starter_kit/cli.py
 
 ## 新手引导与视觉叙事 Bonus
 
-未申报。
+```text
+零基础首次运行指南：webapp.py 首页 hero 区引导 + 3 个一键示例按钮，
+  以及「30 秒量子入门」折叠卡片（量子比特/叠加/纠缠/门操作/结果解读）。
+量子概念解释：首页「量子计算是什么？」引导卡，全部用大白话 + 类比。
+结果可视化：测量结果自动渲染为 SVG 柱状图（百分比标注），并附一段
+  大白话解读（如「结果集中在 000/111，说明你制备了叠加态」）。
+错误恢复或无障碍引导：智能体内置「生成 → 自验 → 重试」闭环，坏电路自动修复；
+  页面错误以醒目红条提示，不出现堆栈；输入为空/异常均有中文提示。
+```
 
 ---
 

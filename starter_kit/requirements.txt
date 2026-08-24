@@ -7,3 +7,4 @@
 # adapter.run("spinq", ...) degrades gracefully when spinqit is absent.
 amazon-braket-sdk==1.110.1
 pyqpanda==3.8.5
+flask==3.1.3

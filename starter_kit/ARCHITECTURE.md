@@ -34,7 +34,8 @@ starter_kit/
 │   ├── run()              # 统一执行：braket LocalSimulator / pyqpanda CPUQVM
 │   ├── agent_chat()       # L2：LLM 生成/修复 QASM + 智能选后端 + 自验闭环
 │   └── compile_hybrid()   # L3：Hybrid-QASM → 量子操作 + RISC-V 汇编
-├── cli.py                 # L2 交互入口（终端对话，零基础用户可用）
+├── webapp.py              # L2 交互入口：零依赖单页 Web（电路 SVG + 结果柱状图 + 新手引导）
+├── cli.py                 # L2 备用交互入口（终端对话）
 ├── llm_client.py          # OpenAI-compatible 传输层（官方提供，未改动）
 ├── stdgates.inc           # Braket LocalSimulator 所需的 12 门白名单定义
 ├── riscv_emulator.py      # 官方 L3 模拟器（未改动）
@@ -69,6 +70,10 @@ starter_kit/
 并内置**自验闭环**：模型生成 QASM → 用我们自己的 L1 在 Braket 模拟器跑一遍 →
 语法/运行失败则要求模型修复后重试。三类任务（意图生成 / 代码纠错 / 智能选后端）
 共用同一入口，后端选择以 `backend_capabilities.json` 官方能力表为唯一依据。
+
+**交互层（webapp.py）**：零 CDN 单页应用，前端用原生 JS 把返回的 QASM 渲染成
+SVG 电路图（门方块 + 连线）、把测量结果渲染成百分比柱状图，并附大白话解读。
+新手引导含「30 秒量子入门」折叠卡与一键示例按钮；评测环境无外网也能完整运行。
 
 ### L3 混合编译设计
 
