@@ -47,6 +47,12 @@ jobs:
         working-directory: starter_kit
         run: python verify_l2.py
 
+      - name: Run per-gate fidelity diagnostic (0.9924 source)
+        run: python tests/l1_gate_diag.py --shots 8192
+
+      - name: Run L3 full test suite (public + 5 custom groups)
+        run: python tests/l3_suite.py
+
       - name: Run public evaluator L1 (braket,originq) + L3
         run: |
           python starter_kit/evaluator.py --level l1 --target braket,originq

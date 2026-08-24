@@ -103,6 +103,35 @@ L3 公开评测：`[PASS] l3:public-branch`（1/1）。
 > 在 braket 上返回正确分布。GHZ-5 / QFT-4 / Grover-3 双后端 vs 理论实测
 > fidelity：0.999/0.994、0.989/0.984、0.992/0.990。
 
+### CI 补齐记录（2026-08-24，评审三项指令）
+
+**指令 1 - 12 门逐门断言**：`test_l1_gates.py` 确定性断言从 6 门扩到
+**全部 12 门**（新增 s/sdg/t/tdg/rz/cx，相位门用 H 干涉测量：
+H·g·H|0> 的 P(0)=cos²(λ/2)，t 实测 0.861≈0.8536 ✓），全部 [PASS]，
+任何 FAIL 以非零码退出。
+
+**指令 2 - braket↔originq 一致性 0.9924 来源**：`tests/l1_gate_diag.py`
+逐门诊断（每门单电路 × 8192 shots × 双后端 vs 理论）：
+- 每个门在两后端各自 vs 理论均 ≥0.994（t: braket 0.9948 / originq 0.9966；
+  sdg 互比 0.9934 但 braket 4136/4056 vs originq 4133/4059 完全一致）
+- **没有任何门系统性偏离理论** → 0.9924 的来源 = **多分量分布的采样噪声**
+  （2048/8192 shots 下 Hellinger 噪声约 1-1.5%），非后端偏差。
+复现：`python tests/l1_gate_diag.py --shots 8192`。
+
+**指令 3 - L3 完整测试清单**：官方公开集仅 1 题
+（`l3:public-branch`：if(c[0]==1) r1=7 else r1=3，evaluator.py 原题）。
+自建补充 5 组（`tests/l3_suite.py`，官方 TinyRISCVEmulator 穷举注入验证）：
+| # | 覆盖 | 注入 | 结果 |
+|---|---|---|---|
+| A | 官方 public-branch | c[0]=0/1 | r1=3/7 PASS |
+| B | if/else + r1=r1+5 算术 | c[0]=0/1 | r1=15/105 PASS |
+| C | c[0]!=0 分支 + r3=r2+r4 | 4 组合 | PASS |
+| D | c[1] 条件（x11） | c[1]=0/1 | r5=42/24 PASS |
+| E | 嵌套 if/else | 3 组合 | PASS |
+| F | 顺序赋值 r1=20;r2=r1+30;r3=r2-5 | 无 | r3=45 PASS |
+
+共 6 组 **ALL PASS**。复现：`python tests/l3_suite.py`。
+
 ## 自定义量子 RISC-V Bonus
 
 未申报。
