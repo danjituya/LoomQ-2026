@@ -36,6 +36,14 @@ _tmp_nat_dbg.py
 _tmp_nat_list.py
 _tmp_run_agent.py
 nl_testbench.py
+_tmp_e3.py
+_tmp_evdb.py
+_tmp_oldres.py
+_tmp_sf.py
+_tmp_sf2.py
+LoomQ-*指令.md
+real_results.json
+run_all_real.py
 
 # IDE
 .idea/

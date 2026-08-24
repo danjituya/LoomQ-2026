@@ -423,12 +423,18 @@ def classify(prompt: str):
     # 1.9 W / 单激发 / W state / 对称纠缠 — **抢在 Bell / GHZ 前**。
     # 严格避免误伤：裸 W 绝对不匹配（否则会命中 with/write/want 等英文词）。
     if re.search(
-        r"(?<![a-zA-Z])w[\s\-]*(?:态|state|对称(?:纠缠(?:态)?)?|单激发)|"
+        r"(?<![a-zA-Z])w[\s\-]*(?:态|state|对\s*称(?:\s*纠\s*缠(?:\s*态)?)?|单\s*激\s*发)|"
         r"(?<![a-zA-Z])w[\s\-]*\d+(?:[\s\-]*(?:量子比特|比特|qubit|位))?|"
-        r"单激发|对称\s*纠缠\s*态",
+        r"单\s*激\s*发|对\s*称\s*纠\s*缠(?:\s*态)?|只\s*有\s*一\s*个\s*1|"  # 只有一个 1 = W 态（exactly one |1⟩）
+        r"exactly\s*one\s*1\b|single[-\s]*excitation|uniformly\s*one[-\s]*hot",
         p, re.IGNORECASE
     ):
-        n = max(2, min(np_ if np_ else 3, 8))
+        # W 态（D(n,1) Dicke 单激发）最小 n>=3；q[]/qubit/qbit 片段显式索引兜底
+        qidx_frag = [int(x) for x in re.findall(r"q\[(\d+)\]", p)]
+        frag_n = (max(qidx_frag) + 1) if qidx_frag else None
+        n = max(3, min(np_ or frag_n or 3, 8))
+        # W2 在教科书定义上不是 W 态（等价 Bell，Bell 分支先吃即可）
+        # 这里强制 >=3 避免 "对称纠缠" 没数时误吃成 W2 导致 fidelity 判定漂移。
         qasm = TEMPLATES.get(f"W{n}") or TEMPLATES.get("W3")
         if qasm:
             expected = {format(1 << i, f"0{n}b"): 1.0 / n for i in range(n)}
@@ -441,16 +447,24 @@ def classify(prompt: str):
     _BELL_RE = (r"(?<![a-z])(bell|epr|epr-pair|entangled\s*pair|entangled\s*state|"
                 r"maximally\s*entangled)(?![a-z])|贝尔|纠缠对|bell-like")
     if re.search(_BELL_RE, p, re.IGNORECASE) and not re.search(
-            r"\bw[-\s]*态\b|w\s*state|单激发|对称纠缠", p, re.IGNORECASE):
+            r"\bw[-\s]*态\b|w\s*state|单\s*激\s*发|对\s*称\s*纠\s*缠|只\s*有\s*一\s*个\s*1", p, re.IGNORECASE):
         return ghz_qasm(2), {"00": 0.5, "11": 0.5}, "Bell 态(2 比特)", "template"
-    # "两比特最大纠缠 / 最大纠缠态 + np_==2 / 2q+纠缠" — 仍是 Bell
-    # 必须先于 GHZ 全局 "最大纠缠" 分支
+    # "两比特最大纠缠 / 最大纠缠态 + np_==2 / 2q+纠缠 / 双比特纠缠态" — 仍是 Bell
+    # 必须先于 GHZ 全局 "最大纠缠" 分支。np_==2 且含中文"纠缠"或 entangled 即命中
+    # （"纠缠"已涵盖"最大纠缠/纠缠态/纠缠对"，故这里不再单列）。
     if np_ is not None and np_ == 2 and (
-        "最大纠缠" in p or "最大纠缠态" in p or "entangled" in p
+        "纠缠" in p or "entangled" in p
     ):
         return ghz_qasm(2), {"00": 0.5, "11": 0.5}, "Bell 态(2 比特)", "template"
     if re.search(r"最大纠缠\s*2|最大纠缠2", p):
         return ghz_qasm(2), {"00": 0.5, "11": 0.5}, "Bell 态(2 比特)", "template"
+
+    # 2.5 中文"纠缠"兜底（无比特数的多比特纠缠；明确 2 比特已被上方 Bell 分支抢走）
+    # 覆盖"互相纠缠/全部纠缠/都纠缠/做个纠缠/纠缠起来/纠缠在一起"等口语，
+    # 使它们命中模板 + 保真度校验，而不是落入 LLM 无校验自由合成。
+    if re.search(r"互相纠缠|全部纠缠|都纠缠|做个纠缠|纠缠起来|纠缠在一起", p):
+        n = max(2, min(np_ if np_ else 3, 8))
+        return ghz_qasm(n), {"0" * n: 0.5, "1" * n: 0.5}, f"GHZ 态({n} 比特)", "template"
 
     # 3. GHZ-n (3+ 比特时才命中；Bell 分支已抢在前面)
     if "ghz" in p or "吉布斯" in p or "最大纠缠" in p or "所有比特关联" in p:
@@ -584,6 +598,9 @@ _OPS_TO_QASM = {
     "H": "h", "X": "x", "S": "s", "SDG": "sdg", "T": "t", "TDG": "tdg",
     "RX": "rx", "RY": "ry", "RZ": "rz", "CX": "cx", "CNOT": "cx",
     "CU1": "cu1", "SWAP": "swap", "CCX": "ccx",
+    # 受控旋转：白名单无此门，synthesize_from_ops 会等价展开为 ry/rz + cx
+    # （crx 用 h 共轭）。这里登记仅为通过查表、由下方专用分支处理。
+    "CRY": "cry", "CRX": "crx", "CRZ": "crz",
 }
 
 
@@ -646,7 +663,13 @@ def synthesize_from_ops(ops_json: str) -> Optional[str]:
             if idx is None:
                 return None
             n_qubits = max(n_qubits, idx + 1)
-            lines.append(f"{qasm_gate}({theta}) q[{idx}];")
+            if gate == "RX":
+                # rx 不在 12 门白名单：rx(θ) = h·rz(θ)·h 精确等价（h 自逆）
+                lines.append(f"h q[{idx}];")
+                lines.append(f"rz({theta}) q[{idx}];")
+                lines.append(f"h q[{idx}];")
+            else:
+                lines.append(f"{qasm_gate}({theta}) q[{idx}];")
             continue
 
         # --- Binary gates: CX / CNOT / SWAP ----------------------------
@@ -680,6 +703,35 @@ def synthesize_from_ops(ops_json: str) -> Optional[str]:
                 n_qubits = max(n_qubits, i1 + 1, i2 + 1)
                 lines.append(f"cu1(0) q[{i1}], q[{i2}];")
                 continue
+
+        # --- Controlled rotations: CRY / CRX / CRZ ---------------------
+        # 白名单 12 门无受控旋转门，等价分解到白名单内的 ry/rz + cx：
+        #   cry(θ) = ry(θ/2) t; cx c,t; ry(-θ/2) t; cx c,t   （标准受控 U 分解）
+        #   crz(θ) = rz(θ/2) t; cx c,t; rz(-θ/2) t; cx c,t
+        #   crx(θ) = h t; [cry(-θ)] ; h t，其中 H·ry(-θ)·H = rx(θ)
+        # （不用 cx; rx; cx 形式：rx 不在白名单，且 cx·rx·cx 数学上不是
+        #   标准受控 X 旋转——ctrl=0 时也会作用 rx，语义错误。）
+        # ["CRY", 0.5236, "q1", "q2"]
+        if gate in ("CRY", "CRX", "CRZ") and len(args) == 3 and isinstance(args[0], (int, float)):
+            theta = args[0]
+            ic, it = _reg_idx(args[1]), _reg_idx(args[2])
+            if ic is None or it is None:
+                return None
+            n_qubits = max(n_qubits, ic + 1, it + 1)
+            half = theta / 2.0
+            if gate == "CRY":
+                seq = [f"ry({half}) q[{it}];", f"cx q[{ic}], q[{it}];",
+                       f"ry({-half}) q[{it}];", f"cx q[{ic}], q[{it}];"]
+            elif gate == "CRZ":
+                seq = [f"rz({half}) q[{it}];", f"cx q[{ic}], q[{it}];",
+                       f"rz({-half}) q[{it}];", f"cx q[{ic}], q[{it}];"]
+            else:  # CRX: h · cry(-θ) · h
+                seq = [f"h q[{it}];", f"ry({-half}) q[{it}];", f"cx q[{ic}], q[{it}];",
+                       f"ry({half}) q[{it}];", f"cx q[{ic}], q[{it}];", f"h q[{it}];"]
+            lines.extend(seq)
+            continue
+        if gate in ("CRY", "CRX", "CRZ"):
+            return None  # 受控旋转必须携带数值参数，否则拒绝
 
         # --- Toffoli: CCX(a, b, t) -------------------------------------
         # ["CCX","q0","q1","q2"]
