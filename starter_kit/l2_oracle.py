@@ -63,6 +63,31 @@ def _bit_index(target: str) -> int:
     return int(m.group(1)) if m else 0
 
 
+def _eval_param(p: str) -> float:
+    """Evaluate a QASM 2.0 parameter: plain number or pi expression
+    (pi, pi/2, -pi/2, 3*pi/4, 0.5*pi, ...)."""
+    p = p.strip()
+    try:
+        return float(p)
+    except ValueError:
+        pass
+    m = re.fullmatch(
+        r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)?)\s*\*?\s*pi\s*(?:/\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)))?",
+        p,
+    )
+    if not m:
+        raise ValueError(f"cannot evaluate parameter: {p!r}")
+    num, den = m.group(1), m.group(2)
+    val = math.pi
+    if num not in ("", "+", "-"):
+        val *= float(num)
+    elif num == "-":
+        val = -val
+    if den:
+        val /= float(den)
+    return val
+
+
 def simulate_statevector(qasm_str: str) -> Tuple[int, Dict[str, float]]:
     """Exact noiseless simulation. Returns (n_qubits, {bitstring: probability})."""
     import numpy as np
@@ -114,7 +139,7 @@ def simulate_statevector(qasm_str: str) -> Tuple[int, Dict[str, float]]:
             continue
         gate, params, targets = op[1], op[2], op[3]
         qs = [_bit_index(t) for t in targets]
-        theta = float(params[0]) if params else None
+        theta = _eval_param(params[0]) if params else None
         g = gate.lower()
         if g == "h":
             single(qs[0], H)
@@ -261,7 +286,11 @@ def classify(prompt: str):
 
     # 8. Grover
     if re.search(r"grover|搜索|找标记|在.*找", p):
-        return TEMPLATES["GROVER3"], {"010": 1.0}, "Grover 搜索(3 比特, 标记 010)", "template"
+        # GROVER3 真实分布（纯态精确模拟，010≈94.53%）：写成期望值后 Oracle
+        # 仍做保真度校验，但不会把正确的 Grover 电路误判为不达标。
+        return TEMPLATES["GROVER3"], {"010": 0.94531, "000": 0.00781, "001": 0.00781,
+                                      "100": 0.00781, "101": 0.00781, "111": 0.00781,
+                                      "110": 0.00781, "011": 0.00781}, "Grover 搜索(3 比特, 标记 010)", "template"
 
     # 9. Deutsch-Jozsa
     if re.search(r"deutsch|平衡|常数函数|判断.*函数", p):

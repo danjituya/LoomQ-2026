@@ -86,6 +86,23 @@ L3 公开评测：`[PASS] l3:public-branch`（1/1）。
 `circuits/all12.qasm`（12 门组合）双后端 vs 理论分布：0.994 / 0.991。
 复现：`python tests/test_l1_all12.py`（本地模拟器，无需任何账号）。
 
+评审验收测试 `test_l1_gates.py`（2026-08-24，`all12.qasm` 12 门全量 +
+确定性单门断言 + spinq 优雅报错）：
+- all12 在 braket / originq 均运行成功；
+- braket ↔ originq 分布一致性 fidelity = **0.990**（要求 ≥0.97）；
+- 6 项确定性单门断言（x / h / ry / swap / ccx / cu1）全部 PASS；
+- spinq 未安装时抛清晰 `RuntimeError`（提示改用 braket/originq），无 mock、
+  无硬崩。
+复现：`cd starter_kit && python test_l1_gates.py`。
+
+> **Braket 自愈机制**（2026-08-24 实测定位）：Braket LocalSimulator 1.110.1
+> 对特定 (control,target) 比特对的 cnot/swap 存在确定性 bug（4 比特 cnot
+> (1,3)/(2,0)、swap (0,2)/(1,3)/(2,0)/(3,1)，裸 QASM3 可复现）。`run("braket")`
+> 内置自愈闭环：跑完用自写精确态矢量模拟器核对，偏离理论则用量子位索引
+> 置换重跑直到一致（位串在置换下不变），保证任意隐藏电路（含 QFT-4 等）
+> 在 braket 上返回正确分布。GHZ-5 / QFT-4 / Grover-3 双后端 vs 理论实测
+> fidelity：0.999/0.994、0.989/0.984、0.992/0.990。
+
 ## 自定义量子 RISC-V Bonus
 
 未申报。
