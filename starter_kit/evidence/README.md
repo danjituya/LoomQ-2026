@@ -64,6 +64,28 @@ python starter_kit/webapp.py
 完整使用流程：见 ARCHITECTURE.md「一键复现」与「必答题」。
 ```
 
+### L1 实测记录（2026-08-24，loomq 环境 Python 3.10）
+
+公开评测器（`evaluator.py --level l1 --target braket,originq`）：
+`[PASS] l1:bell.qasm:braket` / `[PASS] l1:bell.qasm:originq` /
+`[PASS] l1:ghz3.qasm:braket` / `[PASS] l1:ghz3.qasm:originq` → **4/4 通过**。
+L3 公开评测：`[PASS] l3:public-branch`（1/1）。
+
+12 门 × 2 后端全覆盖（`tests/test_l1_all12.py`：逐门电路 vs 自写精确态矢量
+模拟器理论分布，Hellinger Fidelity ≥ 0.97），全部通过：
+
+| 门 | braket | originq | 门 | braket | originq |
+|---|---|---|---|---|---|
+| h | 0.996 | 0.998 | rz | 1.000 | 1.000 |
+| x | 1.000 | 1.000 | ry | 0.996 | 0.992 |
+| s | 0.994 | 0.998 | cx | 0.995 | 0.997 |
+| sdg | 1.000 | 0.995 | cu1 | 通过 | 通过 |
+| t | 1.000 | 1.000 | swap | 1.000 | 1.000 |
+| tdg | 0.994 | 1.000 | ccx | 1.000 | 1.000 |
+
+`circuits/all12.qasm`（12 门组合）双后端 vs 理论分布：0.994 / 0.991。
+复现：`python tests/test_l1_all12.py`（本地模拟器，无需任何账号）。
+
 ## 自定义量子 RISC-V Bonus
 
 未申报。
