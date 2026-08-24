@@ -130,7 +130,9 @@ def index():
     return PAGE_HTML
 
 
-PAGE_HTML = """<!DOCTYPE html>
+# raw string：JS 正则有 \n \s \* 等反斜杠序列，普通字符串会把 \n 展开成
+# 真实换行导致 JS 语法错误（页面脚本整体失效、例子按钮不渲染）
+PAGE_HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -191,6 +193,11 @@ button:disabled{opacity:.5;cursor:wait}
 .fluct{background:#fbfaf6;border:1px dashed var(--line);border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.65}
 .hist-legend{font-size:12px;color:var(--faint);margin-top:8px}
 .muted{color:var(--muted);font-size:13px}
+.howto{display:flex;flex-direction:column;gap:12px;margin-top:16px}
+.howto-item{display:flex;gap:12px;align-items:flex-start}
+.howto-no{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--soft2);color:var(--accent2);font-size:13px;font-weight:600;align-items:center;justify-content:center;flex:none;margin-top:2px}
+.howto-item b{font-size:13.5px;font-weight:600}
+.howto-item p{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.65}
 code.inline{background:#f1efe8;border-radius:5px;padding:1px 6px;font-size:12px;font-family:Consolas,monospace}
 .foot{text-align:center;color:var(--faint);font-size:12px;margin-top:22px;grid-column:1/-1}
 </style>
@@ -229,6 +236,11 @@ code.inline{background:#f1efe8;border-radius:5px;padding:1px 6px;font-size:12px;
       <div class="row">
         <textarea id="input" placeholder="试试输入：生成一个 3 比特的 GHZ 态并测量"></textarea>
         <button id="go">运行</button>
+      </div>
+      <div class="howto" id="howto">
+        <div class="howto-item"><span class="howto-no">1</span><div><b>在框里输入你的问题</b><p>用大白话就行，比如「让三个比特互相纠缠」。也可以点左边第 2 张卡里的例子按钮。</p></div></div>
+        <div class="howto-item"><span class="howto-no">2</span><div><b>看「电路逐行解读」</b><p>每一行都用中文解释了是什么门、作用在哪个比特、有什么效果。</p></div></div>
+        <div class="howto-item"><span class="howto-no">3</span><div><b>看测量结果</b><p>柱状图是模拟器跑 1024 次的统计；灰色虚线是理论上该出现的比例，±3% 以内的偏差都是正常的。</p></div></div>
       </div>
       <div class="out" id="out">
         <div class="section"><h3>智能体回答</h3><div class="reply" id="reply"></div></div>
@@ -315,6 +327,7 @@ async function run() {
   const prompt = input.value.trim();
   if (!prompt) return;
   out.classList.add("show");
+  document.getElementById("howto").style.display = "none";
   errEl.style.display = "none";
   replyEl.innerHTML = '<span class="spin"></span>智能体正在生成量子电路并自检…';
   document.getElementById("circuitSec").style.display = "none";
