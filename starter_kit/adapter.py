@@ -25,7 +25,7 @@ SUPPORTED_TARGETS = ("spinq", "originq", "braket")
 _GATE_MAP_ORIGIN = {
     "h": "H", "x": "X", "s": "S", "sdg": "SDAG", "t": "T", "tdg": "TDAG",
     "rz": "RZ", "ry": "RY", "cx": "CNOT", "cu1": "CU1", "swap": "SWAP",
-    "ccx": "TOFFOLI",
+    "ccx": "TOFFOLI", "u1": "U1",
 }
 
 # ======================================================================
@@ -138,6 +138,90 @@ def _normalize_qasm2(qasm_str: str) -> str:
 # Transpile: OpenQASM 2.0 -> target native IR
 # ======================================================================
 
+# Per-backend gate support (12-gate whitelist). Verified by
+# tests/test_l1_all12.py (per-gate circuits vs exact state-vector oracle on
+# both braket and originq). If a backend ever reports a gate unsupported, the
+# transpiler auto-degrades using _GATE_FALLBACKS below instead of failing.
+_TARGET_GATE_SUPPORT: Dict[str, set] = {
+    "braket": {"h", "x", "s", "sdg", "t", "tdg", "rz", "ry", "cx", "cu1", "swap", "ccx"},
+    "originq": {"h", "x", "s", "sdg", "t", "tdg", "rz", "ry", "cx", "cu1", "swap", "ccx"},
+    "spinq": {"h", "x", "s", "sdg", "t", "tdg", "rz", "ry", "cx", "cu1", "swap", "ccx"},
+}
+
+# Equivalence identities from gate_identities.md (numerically verified by the
+# organizers). {gate: list of (gate, params, targets_template)} where target
+# placeholders are "@0", "@1", ... substituted by the original targets.
+_GATE_FALLBACKS: Dict[str, List[tuple]] = {
+    # phase family -> rz (differs by global phase; measurement-equivalent)
+    "z": [("rz", ["pi"], ["@0"])],
+    "s": [("rz", ["pi/2"], ["@0"])],
+    "sdg": [("rz", ["-pi/2"], ["@0"])],
+    "t": [("rz", ["pi/4"], ["@0"])],
+    "tdg": [("rz", ["-pi/4"], ["@0"])],
+    "swap": [("cx", [], ["@0", "@1"]), ("cx", [], ["@1", "@0"]), ("cx", [], ["@0", "@1"])],
+    "cu1": [
+        ("u1", ["@p/2"], ["@0"]),
+        ("cx", [], ["@0", "@1"]),
+        ("u1", ["-@p/2"], ["@1"]),
+        ("cx", [], ["@0", "@1"]),
+        ("u1", ["@p/2"], ["@1"]),
+    ],
+    "ry": [("sdg", [], ["@0"]), ("h", [], ["@0"]), ("rz", ["@p"], ["@0"]),
+           ("h", [], ["@0"]), ("s", [], ["@0"])],
+    # ccx (Toffoli): qelib1 standard decomposition
+    "ccx": [
+        ("h", [], ["@2"]), ("cx", [], ["@1", "@2"]), ("tdg", [], ["@2"]),
+        ("cx", [], ["@0", "@2"]), ("t", [], ["@2"]), ("cx", [], ["@1", "@2"]),
+        ("tdg", [], ["@2"]), ("cx", [], ["@0", "@2"]), ("t", [], ["@1"]),
+        ("t", [], ["@2"]), ("h", [], ["@2"]), ("cx", [], ["@0", "@1"]),
+        ("t", [], ["@0"]), ("tdg", [], ["@1"]), ("cx", [], ["@0", "@1"]),
+    ],
+}
+
+
+def _apply_fallbacks(qasm_str: str, target: str) -> str:
+    """Rewrite unsupported whitelist gates into equivalent gate sequences.
+
+    Parses the circuit, checks each gate against the target capability matrix,
+    and substitutes equivalent decompositions from _GATE_FALLBACKS. No-op when
+    every gate is supported (the normal case).
+    """
+    supported = _TARGET_GATE_SUPPORT.get(target, set(_GATE_FALLBACKS))
+    qregs, cregs, ops = _parse_qasm2(qasm_str)
+    lines = ["OPENQASM 2.0;", 'include "qelib1.inc";']
+    for name, size in qregs.items():
+        lines.append(f"qreg {name}[{size}];")
+    for name, size in cregs.items():
+        lines.append(f"creg {name}[{size}];")
+    for op in ops:
+        if op[0] == "measure":
+            _, q, qi, c, ci = op
+            if qi is not None and ci is not None:
+                lines.append(f"measure {q}[{qi}] -> {c}[{ci}];")
+            else:
+                size = cregs.get(c, 0)
+                for i in range(size):
+                    lines.append(f"measure {q}[{i}] -> {c}[{i}];")
+            continue
+        _, gate, params, targets = op
+        if gate in supported:
+            if params:
+                lines.append(f"{gate}({', '.join(params)}) {', '.join(targets)};")
+            else:
+                lines.append(f"{gate} {', '.join(targets)};")
+            continue
+        fallback = _GATE_FALLBACKS.get(gate)
+        if fallback is None:
+            raise RuntimeError(f"gate {gate} unsupported by {target} and no fallback")
+        for fg, fparams, ftargets in fallback:
+            sub_t = [targets[int(p[1:])] for p in ftargets]
+            sub_p = [p.replace("@p", params[0]) for p in fparams]
+            if sub_p:
+                lines.append(f"{fg}({', '.join(sub_p)}) {', '.join(sub_t)};")
+            else:
+                lines.append(f"{fg} {', '.join(sub_t)};")
+    return "\n".join(lines) + "\n"
+
 def _to_qasm3(qasm2: str) -> str:
     """Convert OpenQASM 2.0 -> OpenQASM 3.0 (Braket)."""
     qregs, cregs, ops = _parse_qasm2(qasm2)
@@ -155,7 +239,8 @@ def _to_qasm3(qasm2: str) -> str:
                 lines.append(f"{c} = measure {q};")
         else:
             _, gate, params, targets = op
-            g = "cnot" if gate == "cx" else ("cp" if gate == "cu1" else gate)
+            g = "cnot" if gate == "cx" else ("cp" if gate == "cu1"
+                                            else ("p" if gate == "u1" else gate))
             if params:
                 lines.append(f"{g}({', '.join(params)}) {', '.join(targets)};")
             else:
@@ -237,12 +322,13 @@ def _to_originir(qasm2: str) -> str:
 
 def transpile(qasm_str: str, target: str) -> str:
     """Translate OpenQASM 2.0 into the target backend's native representation."""
+    qasm2 = _apply_fallbacks(qasm_str, target)
     if target == "spinq":
-        return _normalize_qasm2(qasm_str)
+        return _normalize_qasm2(qasm2)
     if target == "braket":
-        return _to_qasm3(qasm_str)
+        return _to_qasm3(qasm2)
     if target == "originq":
-        return _to_originir(qasm_str)
+        return _to_originir(qasm2)
     raise ValueError(f"unsupported target: {target}")
 
 
@@ -269,7 +355,10 @@ def _run_braket(qasm2: str, shots: int) -> Dict[str, Any]:
         result = task.result()
     finally:
         os.chdir(old_cwd)
-    counts = {str(k): int(v) for k, v in result.measurement_counts.items()}
+    # Braket returns measurement bitstrings with c[0] as the MOST significant
+    # bit (big-endian); the competition contract requires little-endian
+    # (key = c[n-1]...c[1]c[0], c[0] rightmost, Qiskit convention), so reverse.
+    counts = {str(k)[::-1]: int(v) for k, v in result.measurement_counts.items()}
     job_id = getattr(result.task_metadata, "id", None) or f"braket-local-{int(time.time()*1000)}"
     return {
         "backend": "braket_local_simulator",
@@ -283,8 +372,16 @@ def _run_braket(qasm2: str, shots: int) -> Dict[str, Any]:
 
 
 def _run_spinq(qasm2: str, shots: int) -> Dict[str, Any]:
-    import spinqit as sq
-    from spinqit import BasicSimulatorConfig, get_basic_simulator, get_compiler
+    try:
+        import spinqit as sq
+        from spinqit import BasicSimulatorConfig, get_basic_simulator, get_compiler
+    except ImportError as exc:
+        # Anti-cheat: never return mock data. Fail with a clear message.
+        raise RuntimeError(
+            "spinq 后端需要 spinqit，但当前环境未安装（spinqit 的依赖链与 "
+            "amazon-braket-sdk/pyqpanda 冲突，官方容器不安装它）。"
+            "transpile('spinq') 仍可用，但 run('spinq') 无法执行。"
+        ) from exc
 
     qasm_norm = _normalize_qasm2(qasm2)
     tmp = tempfile.NamedTemporaryFile(
@@ -345,9 +442,11 @@ def _run_originq(qasm2: str, shots: int) -> Dict[str, Any]:
             bits = bin(key)[2:].zfill(num_bits)
         else:
             bits = str(key).zfill(num_bits)
-        # pyqpanda reports big-endian (c[0] leftmost); the competition contract
-        # requires little-endian (key = c[n-1]...c[1]c[0], c[0] rightmost).
-        counts[bits[::-1]] = int(val)
+        # Verified experimentally: pyqpanda already returns little-endian
+        # bitstrings (c[0] rightmost), matching the competition contract.
+        # (A previous bits[::-1] here was a misjudgment based on the
+        # un-normalized Braket backend and broke cu1/swap circuits.)
+        counts[bits] = int(val)
     machine.finalize()
     return {
         "backend": "originq_cpu_simulator",
@@ -362,12 +461,13 @@ def _run_originq(qasm2: str, shots: int) -> Dict[str, Any]:
 
 def run(qasm_str: str, target: str, shots: int) -> Dict[str, Any]:
     """Execute a circuit and return the unified result schema from the rules."""
+    qasm2 = _apply_fallbacks(qasm_str, target)
     if target == "braket":
-        return _run_braket(qasm_str, shots)
+        return _run_braket(qasm2, shots)
     if target == "spinq":
-        return _run_spinq(qasm_str, shots)
+        return _run_spinq(qasm2, shots)
     if target == "originq":
-        return _run_originq(qasm_str, shots)
+        return _run_originq(qasm2, shots)
     raise ValueError(f"unsupported target: {target}")
 
 

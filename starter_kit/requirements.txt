@@ -4,7 +4,8 @@
 # (antlr4-python3-runtime==4.9.2, numpy<2.0.0, torch, python-igraph==0.9.10,
 # pycryptodome==3.11.0) conflicts with amazon-braket-sdk and pyqpanda, which
 # would make `pip install -r requirements.txt` fail in the official container.
-# adapter.run("spinq", ...) degrades gracefully when spinqit is absent.
+# adapter.run("spinq", ...) raises a clear RuntimeError when spinqit is absent
+# (it never returns mock data, per anti-cheat rules); transpile("spinq") works.
 amazon-braket-sdk==1.110.1
 pyqpanda==3.8.5
 flask==3.1.3

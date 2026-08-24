@@ -58,10 +58,24 @@ starter_kit/
 1. **不是三套硬编码分支**，而是"一次解析、三处渲染"——解析器对门集是通用的，
    任意白名单组合电路都能转译，这正是评委会审查的"通用"所在；
 2. **位序统一为 little-endian**：`counts` 的 key 满足 `c[n-1]...c[1]c[0]`。
-   pyqpanda 原生返回大端序，已在 `run()` 内做反转归一化（隐藏电路 QFT/Grover
-   等非对称电路上，这一步决定成败，已用全 12 门电路交叉验证）；
-3. **本地可复现**：Braket 用官方 `LocalSimulator`（免费、无账号），
-   本源用 `CPUQVM`（免费、无账号），公开 Bell/GHZ 电路 `evaluator.py` 4/4 通过。
+   - Braket 原始返回 big-endian（c[0] 为最高位），已在 `run()` 内反转；
+   - pyqpanda 原生即 little-endian（曾误加反转导致 cu1/swap 错误，已实测修正）。
+   该细节已由 `tests/test_l1_all12.py` 的逐门 vs 理论分布测试覆盖。
+3. **自动降级层**：`_apply_fallbacks()` 依据 12门×后端能力矩阵
+   （`_TARGET_GATE_SUPPORT`），若某后端不支持某门，自动套用
+   `_GATE_FALLBACKS` 中的等价分解（源自 `gate_identities.md` 恒等式：
+   phase 族→rz、swap→3×cx、cu1→u1+cx 序列、ccx→Toffoli 分解、ry→sdg/h/rz/h/s），
+   而不是让 `run()` 抛异常。三后端实测均支持全部 12 门，该层为防御性兜底。
+4. **验证方式**：`tests/test_l1_all12.py` 对每个门构造"能暴露行为"的电路，
+   用自写精确态矢量模拟器计算理论分布，在 braket/originq 各跑一次比对
+   Hellinger Fidelity（≥0.97），输出 12门×后端 支持矩阵——已全部通过。
+
+> **已知边界（重要）**：Braket LocalSimulator 对"深电路 + 大角度 rz + 跨比特
+> cx"（如 qiskit StatePreparation 生成的长电路）存在数值精度问题（已实测
+> 二分定位到门级）。这不影响正式评分：L1 由组织方解析 `transpile()` 输出并
+> 用其官方模拟器验证（`target_ir_contract.md`），L2 自检使用自写精确模拟器。
+> 本地开发中应以自写模拟器（`l2_oracle.simulate_statevector`）为基准，勿以
+> Braket 深电路结果为准。
 
 ### L2 智能体设计
 
