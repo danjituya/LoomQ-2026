@@ -56,6 +56,9 @@ jobs:
       - name: Run Grover marker check (exhaustive 8 markers, fidelity>=0.97)
         run: python tests/grover_marker_check.py
 
+      - name: Run Round2 patch check (CRY/CRX/CRZ + 中文纠缠)
+        run: python tests/round2_patch_check.py
+
       - name: Run public evaluator L1 (braket,originq) + L3
         run: |
           python starter_kit/evaluator.py --level l1 --target braket,originq
