@@ -79,6 +79,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import math
 import numpy as np
 
+# 显式 fork 官方 riscv_emulator.py：继承 TinyRISCVEmulator 扩展量子指令
+# （赛事手册 Bonus 第 8 分要求："对官方模拟器的扩展实现（fork riscv_emulator.py）"）
+try:
+    from .riscv_emulator import TinyRISCVEmulator
+except ImportError:
+    # script mode: 直接 `python quantum_riscv_ext.py` 时无包上下文
+    from riscv_emulator import TinyRISCVEmulator
+
 # ============================================================
 # 12 门白名单矩阵
 # ============================================================
@@ -101,22 +109,20 @@ def _gate_matrices():
 # QRVE 模拟器：在官方 TinyRISCVEmulator 上扩展量子指令
 # ============================================================
 
-class QuantumRISCVSimulator:
+class QuantumRISCVSimulator(TinyRISCVEmulator):
     """RISC-V + 自定义量子扩展指令 联合模拟器。
 
-    经典部分与官方 TinyRISCVEmulator 100% 兼容（相同寄存器/指令语义）；
-    量子部分维护一个内联态矢量并响应 Q.* 伪指令。
+    继承自官方 TinyRISCVEmulator（fork riscv_emulator.py 增加指令支持），
+    经典部分完全复用父类实现（registers/pc/labels/instructions/max_steps
+    以及 _parse_reg_idx/get_register/load_program）；本子类仅追加量子
+    扩展：态矢量、Q.* 伪指令、Q.MEAS、Q.SETF 等。
     """
 
     def __init__(self, n_qubits: int = N_QUBITS_MAX):
-        # ---- 经典部分（与 TinyRISCVEmulator 对齐）----
-        self.registers: List[int] = [0] * 32
-        self.pc: int = 0
-        self.labels: Dict[str, int] = {}
-        self.instructions: List[Tuple[str, List[str]]] = []
-        self.max_steps: int = 100_000
+        super().__init__()           # 复用官方经典寄存器/PC/labels/instructions/max_steps
+        self.max_steps = 100_000     # 覆盖：QRVE 程序更长（量子+经典混合）
 
-        # ---- 量子部分 ----
+        # ---- 量子部分（QRVE 扩展）----
         self.n_qubits = max(1, min(n_qubits, N_QUBITS_MAX))
         self.psi: np.ndarray = np.zeros(2 ** self.n_qubits, dtype=complex)
         self.psi[0] = 1.0
@@ -126,56 +132,14 @@ class QuantumRISCVSimulator:
         self._depth_by_qubit = [0] * self.n_qubits
 
     # ========================================================
-    # 寄存器访问 (与官方模拟器保持一致的 API 风格)
+    # 寄存器访问：仅覆盖 set_register 增加 32 位无符号掩码
+    # （QRVE 寄存器值域约定，防止 angle_table 索引或测量结果溢出）
+    # _parse_reg_idx / get_register / load_program 全部继承父类
     # ========================================================
-    def _parse_reg_idx(self, reg: str) -> int:
-        reg = reg.strip().replace(",", "")
-        if not (reg.startswith("x") or reg.startswith("X")):
-            raise ValueError(f"无效寄存器名称: {reg}")
-        idx = int(reg[1:])
-        if not 0 <= idx <= 31:
-            raise ValueError(f"寄存器索引越界 x0-x31: {reg}")
-        return idx
-
     def set_register(self, reg: str, value: int) -> None:
         idx = self._parse_reg_idx(reg)
         if idx != 0:
             self.registers[idx] = value & 0xFFFFFFFF
-
-    def get_register(self, reg: str) -> int:
-        return self.registers[self._parse_reg_idx(reg)]
-
-    # ========================================================
-    # 程序加载（扩展支持 Q.* 伪指令）
-    # ========================================================
-    def load_program(self, asm_code: str) -> None:
-        self.instructions = []
-        self.labels = {}
-        self.pc = 0
-        self.registers = [0] * 32
-
-        temp_instructions: List[Tuple[str, List[str]]] = []
-        for raw_line in asm_code.split("\n"):
-            line = raw_line.strip()
-            if not line or line.startswith("#") or line.startswith(";"):
-                continue
-            if "#" in line:
-                line = line.split("#")[0].strip()
-            # 标签
-            if line.endswith(":"):
-                self.labels[line[:-1].strip()] = len(temp_instructions)
-                continue
-            if ":" in line:
-                head, tail = line.split(":", 1)
-                self.labels[head.strip()] = len(temp_instructions)
-                line = tail.strip()
-
-            tokens = line.replace(",", " ").split()
-            op = tokens[0]
-            args = tokens[1:]
-            temp_instructions.append((op, args))
-
-        self.instructions = temp_instructions
 
     # ========================================================
     # 量子态操纵原语
