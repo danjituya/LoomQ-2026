@@ -519,10 +519,27 @@ def run_e2e_tests() -> Dict[str, Any]:
     return results
 
 
+def _json_safe(obj):
+    """Recursively convert numpy scalar types (np.bool_/np.float64/...) to
+    native Python types so json.dumps works (fixes 'Object of type bool is
+    not JSON serializable' when run directly)."""
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    return obj
+
+
 if __name__ == "__main__":
     import json
     report = run_e2e_tests()
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(json.dumps(_json_safe(report), ensure_ascii=False, indent=2))
     total = report["summary"]["tests_total"]
     passed = report["summary"]["tests_passed"]
     assert passed == total, f"QRVE E2E 测试失败: {passed}/{total}"
