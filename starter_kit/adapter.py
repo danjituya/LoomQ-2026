@@ -1192,7 +1192,15 @@ def agent_chat(prompt: str) -> str:
     # Final fallback: return whatever parseable circuit exists.
     if qasm:
         return _wrap_qasm_reply(qasm)
-    return reply
+    # Never return an empty reply (empty = that case fails outright).
+    # Graceful degradation: when the model call errored AND no rule matched,
+    # still hand back a minimal valid circuit (1-qubit superposition) with a
+    # plain-language note so the reply is always parseable and runnable.
+    return _wrap_qasm_reply(
+        l2_oracle.superposition_qasm(1),
+        "（未能完全理解你的请求；已返回最基础的量子叠加演示电路，"
+        "可直接在此基础上继续修改）",
+    )
 
 
 # ======================================================================
