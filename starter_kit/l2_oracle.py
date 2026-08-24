@@ -271,8 +271,8 @@ def classify(prompt: str):
     if re.search(r"加法|adder|2\+3|3\+2|算.*加|求和", p):
         return TEMPLATES["ADDER_2_3"], {"101": 1.0}, "量子加法器(2+3=5)", "template"
 
-    # 11/12: controlled / random -> structured synthesis via LLM op list
-    if re.search(r"受控|controlled|旋转角|random|随机|噪声", p):
+    # 11/12: controlled / parameterized / random -> structured synthesis
+    if re.search(r"受控|controlled|旋转角|纠缠到|纠缠.*转|转.*弧度|random|随机|噪声", p):
         return None, None, None, "structured"
 
     return None
