@@ -7,7 +7,7 @@
 - [ ] L1 真机
 - [x] L2 交互体验
 - [x] 工程与产品化
-- [ ] 自定义量子 RISC-V Bonus
+- [x] 自定义量子 RISC-V Bonus
 - [x] 新手引导与视觉叙事 Bonus
 
 ---
@@ -134,7 +134,30 @@ H·g·H|0> 的 P(0)=cos²(λ/2)，t 实测 0.861≈0.8536 ✓），全部 [PASS]
 
 ## 自定义量子 RISC-V Bonus
 
-未申报。
+**申报（手册 Bonus「自定义量子 RISC-V 扩展指令」+8 分，三项齐备）**：
+
+| 项 | 文件（均在 `starter_kit/`） | 说明 |
+|---|---|---|
+| ① 指令编码规格文档 | `QRVE_SPEC.md` | QRVE v1.0：Q.\* 伪指令集覆盖 12 门白名单、角度表（Q.SETF float32/字面量双形式）、R-type/I-type 二进制编码（custom-0 opcode=0b0001011，funct7 表）、寄存器映射与官方 L3 兼容（r1..r9→x1..x9，c[k]→x10+k） |
+| ② 模拟器扩展实现 | `quantum_riscv_ext.py` | `QuantumRISCVSimulator(TinyRISCVEmulator)` 显式继承官方 `riscv_emulator.py`（super().__init__ 复用经典寄存器/PC/labels/load_program，仅追加 Q.H/X/S/SDG/T/TDG/RZ/RY/CX/SWAP/CU1/CCX/SETF/MEAS/RESET 量子扩展），满足「fork 官方模拟器增加指令支持」 |
+| ③ 可运行端到端测试 | `test_qrve_bonus.py` | T1-T6：Bell 制备、经典反馈条件控制（GHZ）、参数门（Q.SETF+Q.RY）、SWAP 制造 \|101⟩、Q.MEAS 写经典寄存器、12 门白名单全覆盖；外加模块内置 `run_e2e_tests()` 交叉验证 |
+
+**运行命令与实测输出摘要**：
+
+```bash
+cd starter_kit
+python test_qrve_bonus.py        # → 6/6 通过（T1~T6 全 PASS，fidelity 均 1.0）
+python quantum_riscv_ext.py      # → 输出完整 JSON 报告 + "自测全部通过: 4/4"
+```
+
+```text
+[PASS] T1-Bell-via-Q-instructions            fidelity_bell_subspace: 1.0
+[PASS] T2-Classical-Feedback-Toggles-Gate    case_c0_0_ghz_fid: 1.0 / case_c0_1_flipped_ghz_fid: 1.0
+[PASS] T3-Param-Gate-SETH-RY-CX              bell_subspace_fidelity: 1.0 / angle_table_0_correct: True
+[PASS] T4-SWAP-Makes-101                     dominant_state: 101 / dominant_probability: 1.0
+[PASS] T5-QMEAS-Writes-Classical-Reg         x14_branch_flag: 1（OK 分支命中）
+[PASS] T6-12-Gate-Whitelist-Covered          gate_count: 12 / normalization: 1.0
+```
 
 ## 新手引导与视觉叙事 Bonus
 
