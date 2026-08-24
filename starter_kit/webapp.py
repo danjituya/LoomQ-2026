@@ -7,6 +7,10 @@ experience. Users with no quantum background type plain language, the agent
 diagram plus a measurement histogram - all rendered client-side with no
 external resources.
 
+Layout: wide two-column (learn panel | workbench), guide always visible on
+the left, line-by-line plain-language gate explanations, overlap-free
+histogram with theoretical expectation markers.
+
 Run:
     export LOOMQ_LLM_BASE_URL=...
     export LOOMQ_LLM_API_KEY=...
@@ -134,86 +138,115 @@ PAGE_HTML = """<!DOCTYPE html>
 <title>LoomQ 量子小工坊 · 用大白话指挥量子计算机</title>
 <style>
 :root{
-  --bg:#f7f6f2; --card:#ffffff; --ink:#2c2c2a; --muted:#5f5e5a; --faint:#888780;
-  --line:#e5e2d8; --accent:#0f6e56; --accent2:#378add; --soft:#e1f5ee;
-  --danger:#a32d2d;
+  --bg:#f6f5f1; --card:#ffffff; --ink:#2b2b28; --muted:#5f5e5a; --faint:#8b8a83;
+  --line:#e6e3d9; --accent:#0f6e56; --accent2:#185fa5; --soft:#e1f5ee; --soft2:#e6f1fb;
+  --danger:#a32d2d; --chipbg:#f0eee6;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.7;padding:24px 16px 60px}
-.wrap{max-width:860px;margin:0 auto}
-.hero{background:linear-gradient(135deg,#0f6e56 0%,#0c447c 100%);border-radius:20px;padding:34px 34px 28px;color:#fff;margin-bottom:20px}
-.hero h1{font-size:26px;font-weight:500;letter-spacing:.5px}
-.hero p{font-size:14px;opacity:.92;margin-top:8px;max-width:640px}
-.chips{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
-.chip{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#fff;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer;transition:.15s}
-.chip:hover{background:rgba(255,255,255,.28)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 22px;margin-bottom:16px}
-.card h2{font-size:15px;font-weight:500;margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.step{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--soft);color:var(--accent);font-size:12px;align-items:center;justify-content:center;flex:none}
-textarea{width:100%;min-height:72px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px;font-family:inherit;resize:vertical;outline:none;background:#fff}
+body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.7;padding:20px 18px 50px}
+.app{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:minmax(330px,5fr) minmax(0,8fr);gap:18px;align-items:start}
+@media (max-width:1000px){.app{grid-template-columns:1fr}}
+.left{position:sticky;top:16px;display:flex;flex-direction:column;gap:16px;max-height:calc(100vh - 40px);overflow:auto;padding-right:2px}
+@media (max-width:1000px){.left{position:static;max-height:none}}
+.hero{background:linear-gradient(135deg,#0f6e56 0%,#0c447c 100%);border-radius:18px;padding:26px 26px 22px;color:#fff}
+.hero h1{font-size:23px;font-weight:600;letter-spacing:.5px}
+.hero .sub{font-size:13.5px;opacity:.92;margin-top:8px;line-height:1.75}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 20px}
+.card h2{font-size:15px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:9px}
+.step{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--soft);color:var(--accent);font-size:12px;align-items:center;justify-content:center;flex:none;font-weight:600}
+.guide{font-size:14px}
+.guide details{background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px 14px;margin-bottom:9px}
+.guide details[open]{border-color:var(--accent)}
+.guide summary{cursor:pointer;font-weight:600;font-size:13.5px;list-style:none;display:flex;align-items:center;gap:8px}
+.guide summary::-webkit-details-marker{display:none}
+.guide summary .caret{transition:transform .18s;font-size:10px;color:var(--faint)}
+.guide details[open] summary .caret{transform:rotate(90deg)}
+.guide p{color:var(--muted);font-size:13px;margin-top:7px;line-height:1.75}
+.act-tag{display:inline-block;background:var(--soft);color:var(--accent);font-size:11px;border-radius:6px;padding:1px 7px;flex:none;font-weight:600}
+.chips-hint{font-size:13px;color:var(--muted);margin-bottom:10px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:var(--chipbg);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:7px 13px;font-size:12.5px;cursor:pointer;transition:.15s;font-family:inherit;white-space:normal;text-align:left;line-height:1.5}
+.chip:hover{background:var(--soft);border-color:var(--accent);color:var(--accent)}
+textarea{width:100%;min-height:76px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px;font-family:inherit;resize:vertical;outline:none;background:#fff}
 textarea:focus{border-color:var(--accent)}
 .row{display:flex;gap:10px;align-items:flex-end}
-button{background:var(--accent);color:#fff;border:0;border-radius:12px;padding:11px 22px;font-size:14px;cursor:pointer;font-family:inherit;white-space:nowrap}
+button{background:var(--accent);color:#fff;border:0;border-radius:12px;padding:12px 24px;font-size:14px;cursor:pointer;font-family:inherit;white-space:nowrap}
 button:disabled{opacity:.5;cursor:wait}
-.btn-ghost{background:#fff;color:var(--accent);border:1px solid var(--accent)}
-.muted{color:var(--muted);font-size:13px}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:r 1s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes r{to{transform:rotate(360deg)}}
-.out{display:none;margin-top:14px}
+.out{display:none;margin-top:16px}
 .out.show{display:block}
-.reply{background:#fbfaf6;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px;white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto}
+.reply{background:#fbfaf6;border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13.5px;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;line-height:1.75}
+.reply code{background:#f1efe8;border-radius:5px;padding:1px 6px;font-size:12px;font-family:Consolas,monospace}
+.reply pre{background:#2b2b28;color:#e8e6df;border-radius:10px;padding:12px 14px;font-size:12.5px;overflow:auto;margin:8px 0;font-family:Consolas,monospace;white-space:pre;line-height:1.55}
 .section{margin-top:18px}
-.section h3{font-size:13px;font-weight:500;color:var(--muted);margin-bottom:8px}
+.section h3{font-size:13px;font-weight:600;color:var(--muted);margin-bottom:9px;display:flex;align-items:center;gap:7px}
 .err{background:#fcebeb;color:var(--danger);border-radius:10px;padding:10px 12px;font-size:13px;margin-top:12px}
-.guide{font-size:14px}
-.guide details{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:8px}
-.guide summary{cursor:pointer;font-weight:500;font-size:14px}
-.guide p{color:var(--muted);font-size:13px;margin-top:6px}
-code{background:#f1efe8;border-radius:5px;padding:1px 6px;font-size:12px;font-family:Consolas,monospace}
-.foot{text-align:center;color:var(--faint);font-size:12px;margin-top:24px}
-.chips-hint{font-size:13px;opacity:.88;margin:14px 0 0}
-.gate-line{font-size:13px;color:var(--muted);padding:5px 2px;border-bottom:1px dashed var(--line);line-height:1.6}
+.gate-line{display:flex;align-items:baseline;gap:9px;font-size:13px;color:var(--muted);padding:7px 2px;border-bottom:1px dashed var(--line);line-height:1.6}
 .gate-line:last-child{border-bottom:0}
-.gate-line b{color:var(--accent);font-weight:500}
-.hist-legend{font-size:12px;color:var(--faint);margin-top:8px}
+.gate-no{color:var(--faint);font-size:11px;flex:none;width:22px}
+.gate-name{color:var(--accent);font-weight:600;flex:none}
+.gate-where{color:var(--faint);font-size:12px;flex:none}
+.gate-desc{flex:1}
 .fluct{background:#fbfaf6;border:1px dashed var(--line);border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.65}
-.act-tag{display:inline-block;background:var(--soft);color:var(--accent);font-size:11px;border-radius:6px;padding:1px 7px;margin-right:6px}
+.hist-legend{font-size:12px;color:var(--faint);margin-top:8px}
+.muted{color:var(--muted);font-size:13px}
+code.inline{background:#f1efe8;border-radius:5px;padding:1px 6px;font-size:12px;font-family:Consolas,monospace}
+.foot{text-align:center;color:var(--faint);font-size:12px;margin-top:22px;grid-column:1/-1}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="hero">
-    <h1>量子小工坊 · 用大白话指挥量子计算机</h1>
-    <p>不用学物理，不用写代码。告诉我你想要什么样的量子态，剩下的交给智能体——它会生成电路、画出线路图、运行模拟器，并用大白话解释结果。</p>
-    <div class="chips-hint">不知道怎么提问？点下面的按钮试试：</div>
-    <div class="chips" id="chips"></div>
+<div class="app">
+
+  <div class="left">
+    <div class="hero">
+      <h1>量子小工坊</h1>
+      <div class="sub">不用学物理，不用写代码。用大白话告诉它你想要什么，它生成电路、运行模拟器，并用你能听懂的话解释每一步。</div>
+    </div>
+
+    <div class="card guide">
+      <h2><span class="step">1</span> 量子计算是什么？（4 幕入门）</h2>
+      <details open><summary><span class="act-tag">第 1 幕</span>经典 vs 量子<span class="caret">▶</span></summary>
+      <p>经典比特只有 0 或 1，就像硬币只能正面或反面。量子比特在测量前处于叠加态——既有 0 的成分又有 1 的成分，就像一枚正在旋转的硬币。</p></details>
+      <details open><summary><span class="act-tag">第 2 幕</span>叠加：同时是 0 和 1<span class="caret">▶</span></summary>
+      <p>H 门让量子比特进入叠加态。2 个比特可以同时表示 00、01、10、11 四种状态——这就是量子并行计算的基础。</p></details>
+      <details open><summary><span class="act-tag">第 3 幕</span>纠缠：远距离的神秘关联<span class="caret">▶</span></summary>
+      <p>CX（CNOT）门让两个比特纠缠。测量其中一个，另一个立即"知道"结果——这就是 Bell 态、GHZ 态的基础。</p></details>
+      <details open><summary><span class="act-tag">第 4 幕</span>测量：概率与统计涨落<span class="caret">▶</span></summary>
+      <p>模拟器把电路重复运行 1024 次。理论上 Bell 态应得 50% 00 + 50% 11，但你看到的数字可能不是正好 50%，±3% 的偏差是正常涨落。</p></details>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">2</span> 不知道问什么？点这里</h2>
+      <div class="chips-hint">每个按钮都是一句「人话」提问，点一下直接运行：</div>
+      <div class="chips" id="chips"></div>
+    </div>
   </div>
 
-  <div class="card">
-    <h2><span class="step">1</span> 说出你的量子实验</h2>
-    <div class="row">
-      <textarea id="input" placeholder="试试输入：生成一个 3 比特的 GHZ 态并测量"></textarea>
-      <button id="go">运行</button>
+  <div class="right">
+    <div class="card">
+      <h2><span class="step">3</span> 说出你的量子实验</h2>
+      <div class="row">
+        <textarea id="input" placeholder="试试输入：生成一个 3 比特的 GHZ 态并测量"></textarea>
+        <button id="go">运行</button>
+      </div>
+      <div class="out" id="out">
+        <div class="section"><h3>智能体回答</h3><div class="reply" id="reply"></div></div>
+        <div class="section" id="gateSec" style="display:none">
+          <h3>电路逐行解读（小白友好）</h3>
+          <div id="gateExplain"></div>
+        </div>
+        <div class="section" id="circuitSec" style="display:none"><h3>电路图</h3><div id="circuit"></div></div>
+        <div class="section" id="histSec" style="display:none">
+          <h3>测量结果</h3>
+          <div id="hist"></div>
+          <p class="hist-legend">蓝色柱 = 实际采样次数；灰色虚线 = 理论期望值。</p>
+          <p class="muted" id="explain" style="margin-top:10px"></p>
+          <div class="fluct" id="fluctuation" style="display:none"></div>
+        </div>
+        <div class="err" id="err" style="display:none"></div>
+      </div>
     </div>
-    <div class="out" id="out">
-      <div class="section"><h3>智能体回答</h3><div class="reply" id="reply"></div></div>
-      <div class="section" id="circuitSec" style="display:none"><h3>电路图</h3><div id="circuit"></div></div>
-      <div class="section" id="gateSec" style="display:none"><h3>电路解读</h3><div id="gateExplain"></div></div>
-      <div class="section" id="histSec" style="display:none"><h3>测量结果（蓝色柱 = 实际采样，灰色虚线 = 理论期望）</h3><div id="hist"></div><p class="hist-legend">蓝色柱 = 实际采样次数；灰色虚线 = 理论期望值（若已知）。</p><p class="muted" id="explain" style="margin-top:10px"></p><div class="fluct" id="fluctuation" style="display:none"></div></div>
-      <div class="err" id="err" style="display:none"></div>
-    </div>
-  </div>
-
-  <div class="card guide">
-    <h2><span class="step">2</span> 量子计算是什么？（4 幕故事化入门）</h2>
-    <details open><summary><span class="act-tag">第 1 幕</span>经典 vs 量子</summary>
-    <p>经典比特只有 0 或 1，就像硬币只能正面或反面。量子比特在测量前处于叠加态——既有 0 的成分又有 1 的成分，就像一枚正在旋转的硬币。</p></details>
-    <details><summary><span class="act-tag">第 2 幕</span>叠加：同时是 0 和 1</summary>
-    <p>H 门让量子比特进入叠加态。2 个比特可以同时表示 00、01、10、11 四种状态——这就是量子并行计算的基础。</p></details>
-    <details><summary><span class="act-tag">第 3 幕</span>纠缠：远距离的神秘关联</summary>
-    <p>CX（CNOT）门让两个比特纠缠。测量其中一个，另一个立即"知道"结果——这就是 Bell 态、GHZ 态的基础，爱因斯坦称之为"幽灵般的超距作用"。</p></details>
-    <details><summary><span class="act-tag">第 4 幕</span>测量：概率性坍缩与统计涨落</summary>
-    <p>模拟器把电路重复运行 1024 次。理论上 Bell 态应得 50% 00 + 50% 11，但每次测量结果是概率性的——你看到的数字可能不是正好 50%，±3% 的偏差是正常的统计涨落。</p></details>
   </div>
 
   <p class="foot">LoomQ · Quantum Accessibility Equality Initiative · 让不懂"黑话"的人也能指挥最前沿的算力</p>
@@ -268,12 +301,22 @@ function setBusy(b) {
   go.innerHTML = b ? '<span class="spin"></span>思考中…' : "运行";
 }
 
+/* 转义 + 代码块/加粗的轻量渲染（零依赖） */
+function escHtml(s){return s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+function renderReply(text){
+  let s = escHtml(text);
+  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, (m, lang, code) => "<pre>" + code + "</pre>");
+  s = s.replace(/(^|\n)\*\*([^*\n]+)\*\*/g, "$1<strong>$2</strong>");
+  s = s.replace(/`([^`\n]+)`/g, '<code class="inline">$1</code>');
+  return s;
+}
+
 async function run() {
   const prompt = input.value.trim();
   if (!prompt) return;
   out.classList.add("show");
   errEl.style.display = "none";
-  replyEl.textContent = "智能体正在生成量子电路并自检…";
+  replyEl.innerHTML = '<span class="spin"></span>智能体正在生成量子电路并自检…';
   document.getElementById("circuitSec").style.display = "none";
   document.getElementById("gateSec").style.display = "none";
   document.getElementById("histSec").style.display = "none";
@@ -291,23 +334,25 @@ async function run() {
       errEl.style.display = "block";
       replyEl.textContent = data.reply || "";
     } else {
-      replyEl.textContent = data.reply;
+      replyEl.innerHTML = renderReply(data.reply || "");
       if (data.gates && data.gates.length) {
         circuitEl.innerHTML = renderCircuit(data.qubits, data.gates);
         document.getElementById("circuitSec").style.display = "block";
-        // 电路解读：去重后列出每个门的中文含义
-        const seen = new Set();
-        const lines = [];
-        data.gates.forEach(g => {
-          if (!seen.has(g.gate)) { seen.add(g.gate); const cn = GATE_CN[g.gate]; if (cn) lines.push(cn); }
+        /* 逐行解读：每个门 一行中文解释 + 作用在哪个比特 */
+        const lines = data.gates.map((g, idx) => {
+          const cn = GATE_CN[g.gate] || (g.gate.toUpperCase() + " 门");
+          const where = g.gate === "measure"
+            ? "测量 " + g.qubits.map(q => "q[" + q + "]").join("、")
+            : "施加到 " + g.qubits.map(q => "第 " + (q + 1) + " 个比特（q[" + q + "]）").join("、");
+          return '<div class="gate-line"><span class="gate-no">' + (idx + 1) + "</span>" +
+                 '<span class="gate-name">' + escHtml(g.gate.toUpperCase()) + "</span>" +
+                 '<span class="gate-where">' + escHtml(where) + "</span>" +
+                 '<span class="gate-desc">' + escHtml(cn) + "</span></div>";
         });
-        if (lines.length) {
-          document.getElementById("gateExplain").innerHTML = lines.map(l => '<div class="gate-line">' + l + '</div>').join("");
-          document.getElementById("gateSec").style.display = "block";
-        }
+        document.getElementById("gateExplain").innerHTML = lines.join("");
+        document.getElementById("gateSec").style.display = "block";
       }
       if (data.counts && Object.keys(data.counts).length) {
-        // 前端推断理论期望：2 主峰都 >40% → 50/50；1 主峰 >90% → 100%
         const entries = Object.entries(data.counts);
         const total = entries.reduce((s,e)=>s+e[1],0);
         const sorted = entries.slice().sort((a,b)=>b[1]-a[1]);
@@ -319,7 +364,6 @@ async function run() {
         }
         histEl.innerHTML = renderHist(data.counts, expected);
         explainEl.textContent = data.explain || "";
-        // 统计涨落解释
         const fl = document.getElementById("fluctuation");
         if (expected) {
           const keys = Object.keys(expected);
@@ -345,7 +389,7 @@ async function run() {
 go.onclick = run;
 input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(); } });
 
-/* ---- client-side SVG rendering (mirrors backend, zero deps) ---- */
+/* ---- 电路 SVG（零依赖）---- */
 function esc(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function renderCircuit(n, gates){
   const colW=46,rowH=56,top=40,left=60;
@@ -381,27 +425,45 @@ function renderCircuit(n, gates){
   return s+"</svg>";
 }
 function fmt(p){if(p==null)return "";const v=parseFloat(p);if(isNaN(v))return esc(String(p));if(Math.abs(v)<1e-9)return "0";if(Math.abs(v-Math.round(v))<1e-9)return String(Math.round(v));return v.toFixed(2).replace(/\.?0+$/,"");}
+
+/* ---- 柱状图：修复文字重叠（百分比在柱内白字，理论标注在虚线右端，最多 8 柱 + 其他）---- */
 function renderHist(counts, expected){
-  const items=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,12);
-  const total=items.reduce((s,e)=>s+e[1],0), max=Math.max(...items.map(e=>e[1]),1);
-  const bw=46,n=items.length,w=Math.max(320,n*(bw+22)+80),h=240,base=h-40;
-  let s=`<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;max-width:640px"><rect x="0" y="0" width="${w}" height="${h}" rx="12" fill="#fff"/>`;
-  // 理论期望：灰色虚线 + 标注
-  if(expected){
-    items.forEach((e,i)=>{
-      const key=e[0];
-      if(expected[key]!=null){
-        const eh=(expected[key]*total)/max*(base-56);
-        const ey=base-Math.max(4,eh);
-        const x=40+i*(bw+22);
-        s+=`<line x1="${x-6}" y1="${ey}" x2="${x+bw+6}" y2="${ey}" stroke="#888780" stroke-width="1.5" stroke-dasharray="4,3"/>`;
-        s+=`<text x="${x+bw+10}" y="${ey+4}" text-anchor="start" font-size="11" fill="#888780">理论 ${(expected[key]*100).toFixed(0)}%</text>`;
-      }
-    });
+  let items = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  let restSum = 0;
+  if (items.length > 8) {
+    restSum = items.slice(8).reduce((s,e)=>s+e[1],0);
+    items = items.slice(0,8);
+    if (restSum > 0) items.push(["其他", restSum]);
   }
-  items.forEach((e,i)=>{const [key,val]=e;const hh=Math.max(4,val/max*(base-56)),x=40+i*(bw+22),y=base-hh;
-    s+=`<rect x="${x}" y="${y}" width="${bw}" height="${hh}" rx="5" fill="#378add"/><text x="${x+bw/2}" y="${y-6}" text-anchor="middle" font-size="12" fill="#444441">${(val/total*100).toFixed(1)}%</text><text x="${x+bw/2}" y="${base+18}" text-anchor="middle" font-size="12" fill="#5f5e5a">${key}</text>`;});
-  return s+"</svg>";
+  const total = Object.values(counts).reduce((s,v)=>s+v,0) || 1;
+  const max = Math.max(...items.map(e=>e[1]), 1);
+  const bw = 58, gap = 30, n = items.length, h = 270, base = h - 52;
+  const w = Math.max(440, 56 + n*(bw+gap) + 16);
+  let s = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;max-width:720px"><rect x="0" y="0" width="${w}" height="${h}" rx="12" fill="#fff"/>`;
+  items.forEach((e,i)=>{
+    const key = e[0], val = e[1];
+    const hh = Math.max(6, val/max*(base-72));
+    const x = 46 + i*(bw+gap), y = base - hh;
+    /* 理论期望：虚线画在柱顶对应高度，标签放在虚线右端（柱外），避免与百分比重叠 */
+    if (expected && expected[key] != null) {
+      const ey = base - Math.max(6, expected[key]*total/max*(base-72));
+      const lx = x + bw + 7;
+      s += `<line x1="${x-4}" y1="${ey}" x2="${lx+66}" y2="${ey}" stroke="#8b8a83" stroke-width="1.3" stroke-dasharray="4,3"/>`;
+      s += `<text x="${lx}" y="${ey-3}" text-anchor="start" font-size="11" fill="#8b8a83">理论 ${Math.round(expected[key]*100)}%</text>`;
+    }
+    /* 柱 */
+    s += `<rect x="${x}" y="${y}" width="${bw}" height="${hh}" rx="6" fill="#378add"/>`;
+    /* 百分比：柱够高放柱内（白字），否则放柱顶上方 */
+    const pct = (val/total*100).toFixed(1) + "%";
+    if (hh > 26) {
+      s += `<text x="${x+bw/2}" y="${y+14}" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">${pct}</text>`;
+    } else {
+      s += `<text x="${x+bw/2}" y="${y-7}" text-anchor="middle" font-size="11.5" fill="#444441">${pct}</text>`;
+    }
+    /* 位串标签（柱下方） */
+    s += `<text x="${x+bw/2}" y="${base+20}" text-anchor="middle" font-size="12.5" fill="#5f5e5a">${esc(key)}</text>`;
+  });
+  return s + "</svg>";
 }
 </script>
 </body>
