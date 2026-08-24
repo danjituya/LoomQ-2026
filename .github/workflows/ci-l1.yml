@@ -41,7 +41,7 @@ jobs:
         run: python test_l1_gates.py
 
       - name: Run 12x2 gate matrix vs exact oracle
-        run: python tests/test_l1_all12.py
+        run: python tests/l1_gate_matrix.py
 
       - name: Run L2 template validator (zero-dependency)
         working-directory: starter_kit

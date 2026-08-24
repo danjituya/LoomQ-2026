@@ -71,7 +71,7 @@ python starter_kit/webapp.py
 `[PASS] l1:ghz3.qasm:braket` / `[PASS] l1:ghz3.qasm:originq` → **4/4 通过**。
 L3 公开评测：`[PASS] l3:public-branch`（1/1）。
 
-12 门 × 2 后端全覆盖（`tests/test_l1_all12.py`：逐门电路 vs 自写精确态矢量
+12 门 × 2 后端全覆盖（`tests/l1_gate_matrix.py`：逐门电路 vs 自写精确态矢量
 模拟器理论分布，Hellinger Fidelity ≥ 0.97），全部通过：
 
 | 门 | braket | originq | 门 | braket | originq |
@@ -84,7 +84,7 @@ L3 公开评测：`[PASS] l3:public-branch`（1/1）。
 | tdg | 0.994 | 1.000 | ccx | 1.000 | 1.000 |
 
 `circuits/all12.qasm`（12 门组合）双后端 vs 理论分布：0.994 / 0.991。
-复现：`python tests/test_l1_all12.py`（本地模拟器，无需任何账号）。
+复现：`python tests/l1_gate_matrix.py`（本地模拟器，无需任何账号）。
 
 评审验收测试 `test_l1_gates.py`（2026-08-24，`all12.qasm` 12 门全量 +
 确定性单门断言 + spinq 优雅报错）：

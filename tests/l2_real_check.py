@@ -5,7 +5,7 @@
     $env:LOOMQ_LLM_API_KEY="sk-xxx"
     $env:LOOMQ_LLM_BASE_URL="https://api.deepseek.com"
     $env:LOOMQ_LLM_MODEL="deepseek-v4-flash"
-    python tests/test_l2_real.py
+    python tests/l2_real_check.py
 """
 import os
 import sys

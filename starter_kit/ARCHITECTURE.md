@@ -60,13 +60,13 @@ starter_kit/
 2. **位序统一为 little-endian**：`counts` 的 key 满足 `c[n-1]...c[1]c[0]`。
    - Braket 原始返回 big-endian（c[0] 为最高位），已在 `run()` 内反转；
    - pyqpanda 原生即 little-endian（曾误加反转导致 cu1/swap 错误，已实测修正）。
-   该细节已由 `tests/test_l1_all12.py` 的逐门 vs 理论分布测试覆盖。
+   该细节已由 `tests/l1_gate_matrix.py` 的逐门 vs 理论分布测试覆盖。
 3. **自动降级层**：`_apply_fallbacks()` 依据 12门×后端能力矩阵
    （`_TARGET_GATE_SUPPORT`），若某后端不支持某门，自动套用
    `_GATE_FALLBACKS` 中的等价分解（源自 `gate_identities.md` 恒等式：
    phase 族→rz、swap→3×cx、cu1→u1+cx 序列、ccx→Toffoli 分解、ry→sdg/h/rz/h/s），
    而不是让 `run()` 抛异常。三后端实测均支持全部 12 门，该层为防御性兜底。
-4. **验证方式**：`tests/test_l1_all12.py` 对每个门构造"能暴露行为"的电路，
+4. **验证方式**：`tests/l1_gate_matrix.py` 对每个门构造"能暴露行为"的电路，
    用自写精确态矢量模拟器计算理论分布，在 braket/originq 各跑一次比对
    Hellinger Fidelity（≥0.97），输出 12门×后端 支持矩阵——已全部通过。
 5. **等价分解接代码**：`_decompose_to_primitives()` 把 `gate_identities.md`

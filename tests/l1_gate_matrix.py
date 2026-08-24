@@ -6,7 +6,7 @@
 两个后端各跑一次，比对 Hellinger Fidelity。输出 12门×后端 支持矩阵。
 
 用法:
-    python tests/test_l1_all12.py [--shots 8192]
+    python tests/l1_gate_matrix.py [--shots 8192]
 """
 import argparse
 import math

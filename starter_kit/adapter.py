@@ -198,7 +198,7 @@ def _decompose_to_primitives(qasm2: str, target: str | None = None) -> str:
 # ======================================================================
 
 # Per-backend gate support (12-gate whitelist). Verified by
-# tests/test_l1_all12.py (per-gate circuits vs exact state-vector oracle on
+# tests/l1_gate_matrix.py (per-gate circuits vs exact state-vector oracle on
 # both braket and originq). If a backend ever reports a gate unsupported, the
 # transpiler auto-degrades using _GATE_FALLBACKS below instead of failing.
 _TARGET_GATE_SUPPORT: Dict[str, set] = {
