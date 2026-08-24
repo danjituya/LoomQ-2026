@@ -6,6 +6,7 @@
 # would make `pip install -r requirements.txt` fail in the official container.
 # adapter.run("spinq", ...) raises a clear RuntimeError when spinqit is absent
 # (it never returns mock data, per anti-cheat rules); transpile("spinq") works.
+numpy==1.26.4
 amazon-braket-sdk==1.110.1
 pyqpanda==3.8.5
 flask==3.1.3
