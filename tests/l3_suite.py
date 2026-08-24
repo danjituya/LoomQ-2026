@@ -117,8 +117,50 @@ classical { if (c[0] == 1) { r1 = 7; } else { r1 = 3; } }"""
                        [{}],
                        [lambda s: s.get("x1") == 20 and s.get("x2") == 50 and s.get("x3") == 45])
 
+    # ---------- G. 自建补充：健壮性边界（fuzz 抓出的真实 bug） ----------
+    print("\n[G. 自建补充：健壮性边界——负数/注释/c[k]算术/自引用/else-if]")
+    # G1: 带 // 注释（手册示例格式）
+    src = """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1]; creg c[1];
+measure q[0] -> c[0];
+classical { if (c[0] == 1) { r1 = 7; } else { r1 = 3; } // 经典控制块：由评测系统注入 x10 }"""
+    all_ok &= run_case("G1 带 // 注释", src,
+                       [{"x10": 0}, {"x10": 1}],
+                       [lambda s: s.get("x1") == 3, lambda s: s.get("x1") == 7])
+    # G2: 负数常量（修复：赋值 RHS 支持负字面量）
+    src = hybrid(1, 1, ["measure q[0] -> c[0];"], "r1 = -5; r2 = r1 + 3;")
+    all_ok &= run_case("G2 负数常量 r1=-5（期望 r2=-2）", src,
+                       [{}], [lambda s: s.get("x2") == -2])
+    # G3: 负数参与 if 条件（修复：字面量左右操作数用不同临时寄存器）
+    src = hybrid(1, 1, ["measure q[0] -> c[0];"], "if (c[0] == -1) { r1 = 9; } else { r1 = 1; }")
+    all_ok &= run_case("G3 负数 if 条件 if(c[0]==-1)", src,
+                       [{"x10": -1}, {"x10": 0}],
+                       [lambda s: s.get("x1") == 9, lambda s: s.get("x1") == 1])
+    # G4: 字面量互比（修复：8==-11 不再恒等误判）
+    src = hybrid(1, 1, ["measure q[0] -> c[0];"],
+                 "if (8 == -11) { r9 = r4; } else { r9 = 5; }")
+    all_ok &= run_case("G4 字面量互比 if(8==-11)（期望走 else r9=5）", src,
+                       [{}], [lambda s: s.get("x9") == 5])
+    # G5: c[k] 参与算术（修复：赋值 RHS 支持 c[k]）
+    src = hybrid(1, 1, ["measure q[0] -> c[0];"], "r1 = c[0] + 5;")
+    all_ok &= run_case("G5 c[0] 参与算术 r1=c[0]+5", src,
+                       [{"x10": 3}], [lambda s: s.get("x1") == 8])
+    # G6: 自引用赋值（修复：RHS 先算到独立累加器再写回）
+    src = hybrid(1, 1, ["measure q[0] -> c[0];"], "r2 = 10; r2 = r2 + 21 - r2;")
+    all_ok &= run_case("G6 自引用 r2=r2+21-r2（期望 21）", src,
+                       [{}], [lambda s: s.get("x2") == 21])
+    # G7: else-if 链（嵌套 else 内再 if）
+    src = hybrid(2, 2, ["measure q[0] -> c[0];"],
+                 "if (c[0] == 0) { r1 = 1; } else { if (c[1] == 0) { r1 = 2; } else { r1 = 3; } }")
+    all_ok &= run_case("G7 else-if 链",
+                       src,
+                       [{"x10": 0}, {"x10": 1, "x11": 0}, {"x10": 1, "x11": 1}],
+                       [lambda s: s.get("x1") == 1, lambda s: s.get("x1") == 2,
+                        lambda s: s.get("x1") == 3])
+
     print("\n" + "=" * 66)
-    print(f"L3 套件：{'ALL PASS' if all_ok else 'SOME FAILED'}（官方 1 题 + 自建 5 组 = 6 组覆盖）")
+    print(f"L3 套件：{'ALL PASS' if all_ok else 'SOME FAILED'}（官方 1 题 + 自建 5 组 + 边界 7 例 = 13 组覆盖）")
     print("=" * 66)
     sys.exit(0 if all_ok else 1)
 

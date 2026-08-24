@@ -1102,6 +1102,10 @@ def _compile_classical_to_asm(text: str) -> str:
     r1..r9 -> x1..x9, c[k] -> x10+k. A recursive-descent parser walks the
     mini grammar and emits straight-line assembly with branch labels.
     """
+    # 剥离 // 行注释与 /* */ 块注释（评测用例可能携带，如手册示例中的
+    # "// 经典控制块：测量结果 c[0] 由评测系统注入 x10 寄存器"）
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    text = re.sub(r"//[^\n]*", "", text)
     tokens = re.findall(r"c\[\d+\]|r\d+|\d+|==|!=|[(){}=;+\-]|\w+", text)
     if not tokens:
         return ""
@@ -1110,9 +1114,10 @@ def _compile_classical_to_asm(text: str) -> str:
     cbit_max = max((int(m) for m in re.findall(r"c\[(\d+)\]", text)), default=-1)
     occupied = set(range(1, 10)) | {10 + k for k in range(cbit_max + 1)}
     free = [r for r in range(31, 9, -1) if r not in occupied]
-    if len(free) < 1:
+    if len(free) < 2:
         raise RuntimeError("not enough free registers to compile classical block")
-    tmp_cmp = free[0]
+    tmp_cmp = free[0]   # if 条件比较 + 字面量装载
+    tmp_acc = free[1]   # 赋值 RHS 累加器（与 lhs 分离，避免自引用冲突）
 
     lines: List[str] = []
     pos = 0
@@ -1131,15 +1136,38 @@ def _compile_classical_to_asm(text: str) -> str:
         counter[0] += 1
         return f"{prefix}{counter[0]}"
 
-    def operand_reg(op: str) -> str:
+    def read_term() -> str:
+        """Read one term, merging a leading '-' with the following integer
+        (e.g. '-5') so negative literals work in both if-conditions and
+        assignments. Returns 'rN' | 'c[k]' | '-?\\d+'."""
+        tok = peek()
+        if tok == "-":
+            nxt = tokens[pos + 1] if pos + 1 < len(tokens) else ""
+            if nxt and nxt.isdigit():
+                advance()  # '-'
+                return "-" + advance()  # 数字
+            return advance()  # 单独 '-'（文法外，保持原行为）
+        return advance()
+
+    def operand_reg(op: str, temp: int) -> str:
         """Return a register name holding the operand value."""
         if op.startswith("c["):
             return f"x{10 + int(op[2:op.index(']')])}"
         if op.startswith("r"):
             return f"x{int(op[1:])}"
-        reg = f"x{tmp_cmp}"
-        lines.append(f"li {reg}, {op}")
-        return reg
+        lines.append(f"li x{temp}, {int(op)}")
+        return f"x{temp}"
+
+    def term_reg(tok: str) -> str:
+        """Return the register holding `tok`'s value (c[k]/rN map directly,
+        integer literals are loaded into the temp register)."""
+        if tok.startswith("c["):
+            return f"x{10 + int(tok[2:tok.index(']')])}"
+        if tok.startswith("r"):
+            return f"x{int(tok[1:])}"
+        t = f"x{tmp_cmp}"
+        lines.append(f"li {t}, {int(tok)}")
+        return t
 
     def parse_program(stop_at_rbrace: bool = False) -> None:
         while pos < len(tokens):
@@ -1152,13 +1180,16 @@ def _compile_classical_to_asm(text: str) -> str:
             if peek() == "if":
                 advance()          # if
                 advance()          # (
-                left = advance()
+                left = read_term()
                 op = advance()
-                right = advance()
+                right = read_term()
                 advance()          # )
                 advance()          # {
-                lreg = operand_reg(left)
-                rreg = operand_reg(right)
+                lreg = operand_reg(left, tmp_cmp)
+                # 若 left 也是字面量，right 的字面量装载必须用另一临时寄存器，
+                # 否则 li 会覆盖 left 的值导致比较恒等/恒不等
+                right_temp = tmp_acc if not left.startswith(("c[", "r")) else tmp_cmp
+                rreg = operand_reg(right, right_temp)
                 else_label = new_label("ELSE")
                 end_label = new_label("ENDIF")
                 if op == "==":
@@ -1174,27 +1205,25 @@ def _compile_classical_to_asm(text: str) -> str:
                     parse_program(stop_at_rbrace=True)
                 lines.append(f"{end_label}:")
                 continue
-            # assignment: rN = term (('+'|'-') term)*
+            # assignment: rN = expr; expr = term (('+'|'-') term)*
+            # term = 整数字面量(可负) | rN | c[k]
+            # 先求 RHS 到独立累加器，最后写回 lhs —— 若 lhs 出现在 RHS 中
+            # （如 r2 = r2 + 21 - r2），边算边写会读到自己刚改的值而算错。
             reg = advance()        # rN
             advance()              # =
             lhs = f"x{int(reg[1:])}"
-            first = advance()
-            if first.isdigit():
-                lines.append(f"li {lhs}, {int(first)}")
-            elif first != reg:
-                lines.append(f"add {lhs}, x{int(first[1:])}, x0")
+            acc = f"x{tmp_acc}"
+            first = read_term()
+            lines.append(f"add {acc}, {term_reg(first)}, x0")
             while peek() in ("+", "-"):
                 op = advance()
-                term = advance()
-                if term.isdigit():
-                    imm = int(term)
-                    lines.append(f"addi {lhs}, {lhs}, {-imm if op == '-' else imm}")
+                term = read_term()
+                tr = term_reg(term)
+                if op == "+":
+                    lines.append(f"add {acc}, {acc}, {tr}")
                 else:
-                    treg = f"x{int(term[1:])}"
-                    lines.append(
-                        f"add {lhs}, {lhs}, {treg}" if op == "+"
-                        else f"sub {lhs}, {lhs}, {treg}"
-                    )
+                    lines.append(f"sub {acc}, {acc}, {tr}")
+            lines.append(f"add {lhs}, {acc}, x0")
             if peek() == ";":
                 advance()
 
