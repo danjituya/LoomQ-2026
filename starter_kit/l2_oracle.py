@@ -328,15 +328,51 @@ def grover3_expected(marker: str) -> Dict[str, float]:
 # Intent classification (12 categories, keyword routing)
 # ======================================================================
 
-def _num_from(prompt: str, patterns) -> Optional[int]:
+# 中文数字 → 阿拉伯数字映射（自然语言口语高频：两/双/几 等）
+_ZH_DIGIT = {"零": 0, "一": 1, "幺": 1, "二": 2, "两": 2, "双": 2,
+             "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8,
+             "九": 9, "十": 10, "俩": 2}
+
+
+def _num_from(prompt: str, patterns, allow_zh: bool = True) -> Optional[int]:
+    """Extract an integer from prompt using regex patterns.
+
+    ``patterns`` capture-group result may be either a pure Arabic digit string
+    or a Chinese digit (一/两/双/…/十) via ``allow_zh``. We also accept raw
+    Chinese-digit patterns (e.g. "两比特") by appending a zh-digit branch
+    internally to every pattern (only for the default qubit-number call-site).
+    """
     for pat in patterns:
         m = re.search(pat, prompt)
-        if m:
+        if not m:
+            continue
+        tok = m.group(1).strip().lower()
+        if not tok:
+            continue
+        # 纯阿拉伯数字
+        if tok.isdigit():
             try:
-                return int(m.group(1))
-            except (ValueError, IndexError):
+                return int(tok)
+            except ValueError:
                 pass
+        # 允许中文数字（单字高频）：两/双/三…十
+        if allow_zh and tok in _ZH_DIGIT:
+            return _ZH_DIGIT[tok]
     return None
+
+
+# Default qubit-number extractor: 阿拉伯 + 中文单位前缀 + 常见单位+空格可选
+# 注：中文单位（比特/量子比特/位）末尾不能用 \b（Unicode 中文间不存在词边界），
+# 用 (?!后面接更多中文单位字符) 作为软边界即可；阿拉伯和英文 \b 正常。
+_QUBIT_NUM_PATTERNS = [
+    # Arabic: 2比特 / 2 比特 / 2个比特 / 2 量子比特
+    r"(\d+)\s*个?\s*(?:量子比特|比特|qubit|qbit|位)(?![\u4e00-\u9fff]比特|量子比特)",
+    r"\b(\d+)-qubit\b",
+    r"\b(\d+)q\b",
+    r"q\[(\d+)\]",
+    # Chinese single digit: 两比特 / 两个比特 / 三量子比特 / 四位
+    r"([零一二两双三四五六七八九十幺俩])\s*个?\s*(?:量子比特|比特|qubit|qbit|位)(?![\u4e00-\u9fff]比特|量子比特)",
+]
 
 
 def classify(prompt: str):
@@ -346,17 +382,32 @@ def classify(prompt: str):
     kind: 'template' (exact), 'structured' (needs LLM op list).
     """
     p = prompt.lower()
-    np_ = _num_from(prompt, [r"(\d+)\s*比特", r"(\d+)\s*qubit", r"(\d+)\s*位"])
+    np_ = _num_from(prompt, _QUBIT_NUM_PATTERNS)
 
     # 0. code-fix prompt (gives a broken circuit and asks to repair). Check
     # BEFORE template rules so "制备贝尔态：H q[0]; CX q[0] q[1]; 代码报错请修复"
     # routes as "fix" first, then the caller re-classifies on the cleaned text.
-    if re.search(r"报错|错误|修好|修复|帮我修|语法错|修正.*电路|这段代码|下面代码", p):
+    if re.search(r"报错|错误|修好|修复|帮我修|语法错|修正.*电路|这段代码|下面代码|"
+                 r"syntax\s*error|fix\s*(it|the)\s*(code|circuit)|repair\s*circuit|"
+                 r"wrong\s*capital|capitaliz|broken\s*circuit|gate\s*name\s*(is\s*)?wrong",
+                 p, re.IGNORECASE):
         return None, None, None, "fix"
 
     # 1. backend selection (选哪个平台/后端) -> handled by caller
-    if re.search(r"选.*平台|选.*后端|选.*量子.*机|选.*(机器|设备|模拟器)|推荐.*平台|推荐.*后端|推荐.*(设备|量子.*机|机器|真机|模拟器)|"
-                 r"哪个.*(平台|后端|量子.*机|真机|设备|模拟器)|跑这个.*选.*|用哪个", p):
+    # 中文常见说法 + 英混/纯英说法：which backend / recommend / pick / choose /
+    # local simulator / platform for / 量子平台 / 跑 xxx 选
+    if re.search(
+        r"选.*平台|选.*后端|选.*量子.*机|选.*(机器|设备|模拟器)|"
+        r"推荐.*平台|推荐.*后端|推荐.*(设备|量子.*机|机器|真机|模拟器)|"
+        r"哪个.*(平台|后端|量子.*机|真机|设备|模拟器)|跑这个.*选.*|用哪个|"
+        r"帮我选.*(量子|平台|后端|设备|机器|模拟器)|"
+        r"which\s*(backend|platform|simulator|device|machine|qpu|chip)|"
+        r"(recommend|suggest|pick|choose)\s*(me\s*)?(a|an|the\s*)?\s*(backend|platform|simulator|device|machine|qpu)\b|"
+        r"(should\s+i|what\s+(backend|platform|simulator)\s+to|to\s+run\s+.*(choose|use|pick))|"
+        r"local\s*simulator|for\s*free\s*/\s*no\s*cost|zero\s*queue\s*time|"
+        r"免费额度|排队时间|几小时排队|跑.*比特.*选|跑.*q\b.*选|模拟器运行",
+        p, re.IGNORECASE
+    ):
         return None, None, None, "backend_select"
 
     # 1b. structured synthesis HINTS (必须在 template 规则之前检查：若用户明确要求
@@ -369,27 +420,42 @@ def classify(prompt: str):
     if re.search(STRUCT_HINTS, p):
         return None, None, None, "structured"
 
+    # 1.9 W / 单激发 / W state / 对称纠缠 — **抢在 Bell / GHZ 前**。
+    # 严格避免误伤：裸 W 绝对不匹配（否则会命中 with/write/want 等英文词）。
+    if re.search(
+        r"(?<![a-zA-Z])w[\s\-]*(?:态|state|对称(?:纠缠(?:态)?)?|单激发)|"
+        r"(?<![a-zA-Z])w[\s\-]*\d+(?:[\s\-]*(?:量子比特|比特|qubit|位))?|"
+        r"单激发|对称\s*纠缠\s*态",
+        p, re.IGNORECASE
+    ):
+        n = max(2, min(np_ if np_ else 3, 8))
+        qasm = TEMPLATES.get(f"W{n}") or TEMPLATES.get("W3")
+        if qasm:
+            expected = {format(1 << i, f"0{n}b"): 1.0 / n for i in range(n)}
+            return qasm, expected, f"W 态({n} 比特)", "template"
+
     # 2. Bell / EPR （优先于 GHZ，因为"纠缠对/EPR/bell-like"都明确是 2 比特）
-    if re.search(r"\bbell\b|贝尔|\be ?pr\b|bell-like|纠缠对", p):
+    # 补充：纯英 "entangled pair / entangled state / maximally entangled + np_==2" 也是 Bell。
+    # 注意：CJK 字符附近 \b（词边界）不生效，要用 (?<![a-z])/(?![a-z]) 代替裸 \b。
+    # 注意：如果用户同时写了 "W / 对称纠缠"（上一节前哨已拦截），不会走到这里。
+    _BELL_RE = (r"(?<![a-z])(bell|epr|epr-pair|entangled\s*pair|entangled\s*state|"
+                r"maximally\s*entangled)(?![a-z])|贝尔|纠缠对|bell-like")
+    if re.search(_BELL_RE, p, re.IGNORECASE) and not re.search(
+            r"\bw[-\s]*态\b|w\s*state|单激发|对称纠缠", p, re.IGNORECASE):
         return ghz_qasm(2), {"00": 0.5, "11": 0.5}, "Bell 态(2 比特)", "template"
-    # "最大纠缠 2 比特 / 最大纠缠2 qubit" -> 仍是 Bell
-    if re.search(r"最大纠缠\s*2|最大纠缠2", p) or (np_ == 2 and "最大纠缠" in p):
+    # "两比特最大纠缠 / 最大纠缠态 + np_==2 / 2q+纠缠" — 仍是 Bell
+    # 必须先于 GHZ 全局 "最大纠缠" 分支
+    if np_ is not None and np_ == 2 and (
+        "最大纠缠" in p or "最大纠缠态" in p or "entangled" in p
+    ):
+        return ghz_qasm(2), {"00": 0.5, "11": 0.5}, "Bell 态(2 比特)", "template"
+    if re.search(r"最大纠缠\s*2|最大纠缠2", p):
         return ghz_qasm(2), {"00": 0.5, "11": 0.5}, "Bell 态(2 比特)", "template"
 
     # 3. GHZ-n (3+ 比特时才命中；Bell 分支已抢在前面)
     if "ghz" in p or "吉布斯" in p or "最大纠缠" in p or "所有比特关联" in p:
         n = max(2, min(np_ if np_ else 3, 8))
         return ghz_qasm(n), {"0" * n: 0.5, "1" * n: 0.5}, f"GHZ 态({n} 比特)", "template"
-
-    # 4. W-n (single-excitation)
-    if re.search(r"w\s*态|w\s*state|单激发|对称纠缠|w\b", p) and not any(
-        k in p for k in ("ghz", "bell", "qft", "叠加", "superposition")
-    ):
-        n = max(2, min(np_ if np_ else 3, 8))
-        qasm = TEMPLATES.get(f"W{n}")
-        if qasm:
-            expected = {format(1 << i, f"0{n}b"): 1.0 / n for i in range(n)}
-            return qasm, expected, f"W 态({n} 比特)", "template"
 
     # 5/6. superposition (single / uniform n-qubit)
     #    结构化合成关键词已在 1b 拦截，这里命中的就是纯"均匀/叠加态"模板请求
@@ -464,10 +530,7 @@ def _select_backend(prompt: str) -> Optional[str]:
     except (OSError, ValueError):
         return None
 
-    np_ = _num_from(prompt, [
-        r"(\d+)\s*比特", r"(\d+)\s*qubit", r"(\d+)\s*位", r"(\d+)\s*qubit",
-        r"(\d+)q\b", r"(\d+)-qubit", r"q\[(\d+)\]",
-    ])
+    np_ = _num_from(prompt, _QUBIT_NUM_PATTERNS)
     required_qubits = np_ if np_ else 1
 
     # Prefer "真机 / real / 物理" -> filter by is_simulator? table lacks the flag, so

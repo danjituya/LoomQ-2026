@@ -12,5 +12,30 @@ __pycache__/
 report.json
 *.pyc
 
+# Local debug/report artifacts (not part of the submission)
+L1-验证报告.html
+L2-*报告.html
+L2-问题集.json
+LoomQ-项目存档.html
+LoomQ-验收面板.html
+_gen_l1_report.py
+_inject_realrun.py
+_l1_realrun.py
+_l2_eval.py
+_l2_naturalness_eval.py
+diag_one.py
+l1_braket_real.json
+l1_docker_real.json
+l1_gate_matrix.csv
+l2_eval_result.json
+l2_naturalness_result.json
+l2_webui.py
+L2-自然语言交互鲁棒性报告.html
+_tmp_last_dbg.py
+_tmp_nat_dbg.py
+_tmp_nat_list.py
+_tmp_run_agent.py
+nl_testbench.py
+
 # IDE
 .idea/
