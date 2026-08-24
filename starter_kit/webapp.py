@@ -222,23 +222,19 @@ code.inline{background:#f1efe8;border-radius:5px;padding:1px 6px;font-size:12px;
       <details open><summary><span class="act-tag">第 4 幕</span>测量：概率与统计涨落<span class="caret">▶</span></summary>
       <p>模拟器把电路重复运行 1024 次。理论上 Bell 态应得 50% 00 + 50% 11，但你看到的数字可能不是正好 50%，±3% 的偏差是正常涨落。</p></details>
     </div>
-
-    <div class="card">
-      <h2><span class="step">2</span> 不知道问什么？点这里</h2>
-      <div class="chips-hint">每个按钮都是一句「人话」提问，点一下直接运行：</div>
-      <div class="chips" id="chips"></div>
-    </div>
   </div>
 
   <div class="right">
     <div class="card">
-      <h2><span class="step">3</span> 说出你的量子实验</h2>
+      <h2><span class="step">2</span> 说出你的量子实验</h2>
       <div class="row">
         <textarea id="input" placeholder="试试输入：生成一个 3 比特的 GHZ 态并测量"></textarea>
         <button id="go">运行</button>
       </div>
+      <div class="chips-hint">不知道怎么问？点下面的例子直接运行：</div>
+      <div class="chips" id="chips"></div>
       <div class="howto" id="howto">
-        <div class="howto-item"><span class="howto-no">1</span><div><b>在框里输入你的问题</b><p>用大白话就行，比如「让三个比特互相纠缠」。也可以点左边第 2 张卡里的例子按钮。</p></div></div>
+        <div class="howto-item"><span class="howto-no">1</span><div><b>在框里输入你的问题</b><p>用大白话就行，比如「让三个比特互相纠缠」。也可以直接点上面的例子按钮。</p></div></div>
         <div class="howto-item"><span class="howto-no">2</span><div><b>看「电路逐行解读」</b><p>每一行都用中文解释了是什么门、作用在哪个比特、有什么效果。</p></div></div>
         <div class="howto-item"><span class="howto-no">3</span><div><b>看测量结果</b><p>柱状图是模拟器跑 1024 次的统计；灰色虚线是理论上该出现的比例，±3% 以内的偏差都是正常的。</p></div></div>
       </div>
