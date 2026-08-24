@@ -42,6 +42,10 @@ _tmp_oldres.py
 _tmp_sf.py
 _tmp_sf2.py
 LoomQ-*指令.md
+L2-*指令*.md
+LoomQ-学术题实测报告.html
+academic_results.json
+run_academic.py
 real_results.json
 run_all_real.py
 L2-零基础交互测试集.json
