@@ -829,27 +829,56 @@ def agent_chat(prompt: str) -> str:
         cleaned = prompt
         for _wr in _wrappers:
             cleaned = re.sub(_wr, " ", cleaned, flags=re.IGNORECASE)
-        # Step 2: strip fix keywords (same as before)
-        cleaned = re.sub(r"(报错|错误|修好|修复|帮我修|语法错|修正.*电路|这段代码|下面代码|"
+        # Step 2: strip fix keywords (same as before) — 注意只删 "报错/修好…" 等动作词，
+        # 不删"三胞胎纠缠/硬币同步"这种比喻提示语义（classify 刚加了口语比喻词）。
+        cleaned = re.sub(r"(报错|错误|修好|修复|帮我修|语法错|语法.*(错|不对)|修正.*电路|"
+                         r"这段代码|下面代码|粘.*报错|粘贴.*报错|直接粘.*报错|"
+                         r"帮我补(完|齐|整|全)|补.*creg|补.*include|补.*measure|"
+                         r"改成对的|改好|中文标点|缺.*分号|门之间缺|手机敲|老师让我|"
                          r"h\s*q\[0\].*?cnot.*?请修复|请修复|.*修复代码|"
                          r"syntax\s*error|fix\s*(it|the)\s*(code|circuit)|repair\s*circuit|"
                          r"wrong\s*capital|capitaliz|broken\s*circuit|gate\s*name\s*(is\s*)?wrong|"
-                         r"（门名大小写错）|\(门名大小写错\)|门名大小写错)",
+                         r"（门名大小写错）|\(门名大小写错\)|门名大小写错|"
+                         r"有语法错误|有 bug|漏 creg|缺 include|缺 measure)",
                          "", cleaned, flags=re.IGNORECASE)
+        # 零基础手机输入常见：把中文顿号「、」中文分号「；」在代码区也替换（保留描述语里的没问题）
         cleaned = cleaned.strip() or prompt
         fixed_hit = l2_oracle.classify(cleaned)
         # Step 3: Heuristic target-state inference for ambiguous V2 fix prompts
         # (QASM fragments without explicit state names). Use max q[*]/c[*] index in
         # the cleaned snippet + explicit hint keywords + well-known patterns.
         if (fixed_hit is None or fixed_hit[3] != "template") and cleaned:
-            qidx = [int(x) for x in re.findall(r"q\[(\d+)\]", cleaned)]
-            cidx = [int(x) for x in re.findall(r"c\[(\d+)\]", cleaned)]
+            # 零基础常见写法：支持 q0 / q1 / q2 和 q[0] / q[1] / q[2] 两种索引。
+            # 注意：qreg q[4] 声明里的数字是"尺寸"，不是 qubit 索引！
+            _gate_q_lines = re.findall(
+                r"(?:h|x|s|sdg|t|tdg|cx|cnot|ccx|toffoli|swap|ry|rz|rx|cu1|measure|barrier|u1|u2|u3)"
+                r"[^;\n，,；、]*?(?:q\[(\d+)\]|q(\d))",
+                cleaned, re.IGNORECASE)
+            if not _gate_q_lines:
+                _gate_q_lines = re.findall(r"(?<!qreg\s)(?:q\[(\d+)\]|q(\d))", cleaned, re.IGNORECASE)
+            qidx = []
+            for pair in _gate_q_lines:
+                for x in pair:
+                    if x is not None and str(x).strip() != '':
+                        qidx.append(int(x))
+            # cidx 同理支持 c0 / c1
+            _gate_c_lines = re.findall(r"(?:measure[^;\n，,；、]*?->\s*(?:c|b\d*))(?:\[(\d+)\]|(\d))", cleaned, re.IGNORECASE)
+            if not _gate_c_lines:
+                _gate_c_lines = re.findall(r"(?<!creg\s)(?:c\[(\d+)\]|c(\d))", cleaned, re.IGNORECASE)
+            cidx = []
+            for pair in _gate_c_lines:
+                for x in pair:
+                    if x is not None and str(x).strip() != '':
+                        cidx.append(int(x))
             max_q = max(qidx) if qidx else -1
             max_c = max(cidx) if cidx else -1
             nqubit_hint = max(max_q, max_c) + 1 if max(max_q, max_c) >= 0 else None
             has_cnot = bool(re.search(r"\bcnot\b|\bcx\b|\bcx,", cleaned.lower()))
             has_ccx = bool(re.search(r"\bccx\b|toffoli", cleaned.lower()))
-            has_measure = "measure" in cleaned.lower() or "->" in cleaned
+            has_measure = ("measure" in cleaned.lower() or "->" in cleaned or
+                           re.search(r"(测|测量|三个测量|都测量)", cleaned))
+            has_h_only = bool(re.findall(r"(?<!qreg\s|\w)(?:h\s*q\[?\s*\d+\s*\]?|h\s+q\s*\d)", cleaned, re.IGNORECASE))
+            entangle_hint = bool(re.search(r"纠缠|GHZ|ghz|Bell|贝尔|胞胎|同步|都正|都反", cleaned, re.I))
             has_W_hit = bool(re.search(
                 r"(?<![a-zA-Z])w[\s\-]*(?:态|state|对\s*称(?:\s*纠\s*缠(?:\s*态)?)?|单\s*激\s*发)|"
                 r"单\s*激\s*发|对\s*称\s*纠\s*缠(?:\s*态)?|只\s*有\s*一\s*个\s*1|"
@@ -867,8 +896,8 @@ def agent_chat(prompt: str) -> str:
             if (fixed_hit is None or fixed_hit[3] != "template"):
                 if max_q == 1 and has_cnot:
                     fixed_hit = l2_oracle.ghz_qasm(2), {"00": 0.5, "11": 0.5}, "Bell 态(2 比特)", "template"
-                elif (max_q == 2 and has_cnot) or re.search(r"cnot\s*q\[0\],?\s*q\[2\]|cx\s*q\[0\],?\s*q\[2\]", cleaned.lower()):
-                    n = max_q + 1
+                elif (max_q == 2 and has_cnot) or re.search(r"(?:cnot|cx)[^;\n，,；、]{0,8}q\s*\[?\s*0\s*\]?[^;\n，,；、]{0,4}q\s*\[?\s*2\s*\]?", cleaned, re.I):
+                    n = max_q + 1 if max_q >= 0 else 3
                     fixed_hit = (l2_oracle.ghz_qasm(n),
                                  {"0" * n: 0.5, "1" * n: 0.5},
                                  f"GHZ 态({n} 比特)", "template")
@@ -877,32 +906,47 @@ def agent_chat(prompt: str) -> str:
                                  {"000": 0.5, "111": 0.5},
                                  "GHZ 态(3 比特)", "template")
                 elif nqubit_hint == 1 and has_measure:
-                    # 只有 1 比特且有测量（含 E3 题 "include qelib1.inc" 缺引号 / "x x q[0]" 双写 X）：
-                    # 如果 cleaned 里有 "x h s t" 门名，就生成一个单比特叠加/X/HST 电路。
                     g_qasm = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[1]; creg c[1];\n'
                     lower = cleaned.lower()
-                    _1q_gates = []
-                    for token in re.findall(r"\b(h|x|s|sdg|t|tdg|ry|rz)\b", lower):
-                        if token in ("ry","rz"): continue  # 无角度忽略
-                        _1q_gates.append(token)
+                    all_tokens = re.findall(r"\b(h|x|s|sdg|t|tdg|ry|rz)\b", lower)
+                    seen_oneq = set(); _1q_gates = []
+                    for tok in all_tokens:
+                        if tok in ("ry","rz"): continue
+                        if tok in seen_oneq: continue
+                        seen_oneq.add(tok); _1q_gates.append(tok)
                     if not _1q_gates:
                         _1q_gates = ["h"] if has_measure else []
-                    seen_1 = False
                     for g in _1q_gates:
-                        if g == "x" and not seen_1:
-                            g_qasm += "x q[0];\n"; seen_1 = True; continue
                         g_qasm += f"{g.lower()} q[0];\n"
                     g_qasm += "measure q[0] -> c[0];\n"
-                    # 期望分布通过 oracle 本地算
                     try:
                         _, d = l2_oracle.simulate_statevector(g_qasm)
                     except Exception:
                         d = {"0": 1.0}
                     fixed_hit = (g_qasm, d, "单比特电路(修复后)", "template")
+                elif has_h_only and not has_cnot and not entangle_hint and not has_ccx:
+                    # 3 位全 H + 全测量 → 均匀叠加（不是 GHZ 纠缠！）
+                    #   e.g. B-2-uniform: "qreg q[3]; h q0 h q1 h q2; 你帮我补完整"
+                    n = nqubit_hint if nqubit_hint and nqubit_hint >= 1 else 3
+                    n = min(n, 8)
+                    qasm = l2_oracle.superposition_qasm(n)
+                    exp = l2_oracle.uniform_expected(n)
+                    fixed_hit = (qasm, exp, f"均匀叠加态({n} 比特)", "template")
                 elif nqubit_hint is not None and has_measure:
-                    fixed_hit = (l2_oracle.ghz_qasm(nqubit_hint),
-                                 {"0" * nqubit_hint: 0.5, "1" * nqubit_hint: 0.5},
-                                 f"GHZ 态({nqubit_hint} 比特)", "template")
+                    # 兜底：如果明确有"纠缠/三胞胎/同步/胞胎"走 GHZ，否则走均匀叠加
+                    if entangle_hint:
+                        fixed_hit = (l2_oracle.ghz_qasm(nqubit_hint),
+                                     {"0" * nqubit_hint: 0.5, "1" * nqubit_hint: 0.5},
+                                     f"GHZ 态({nqubit_hint} 比特)", "template")
+                    elif nqubit_hint >= 1:
+                        n = min(nqubit_hint, 8)
+                        fixed_hit = (l2_oracle.superposition_qasm(n),
+                                     l2_oracle.uniform_expected(n),
+                                     f"均匀叠加态({n} 比特)", "template")
+                    else:
+                        fixed_hit = (l2_oracle.ghz_qasm(nqubit_hint),
+                                     {"0" * nqubit_hint: 0.5, "1" * nqubit_hint: 0.5},
+                                     f"GHZ 态({nqubit_hint} 比特)", "template")
         # Always invoke the model (contract), then prefer the template.
         try:
             _ = call(messages)
@@ -948,8 +992,14 @@ def agent_chat(prompt: str) -> str:
     # / N-bit RNG / QHFC / Deutsch-Jozsa 等），0 Key 时走本地规则生成 QASM，
     # 避免 structured 合成路径在 chat_completion 抛错后返回空字符串。
     try:
-        from .structured_fallbacks import try_parse_structured
-    except Exception:  # 模块不存在则静默跳过
+        # 兼容两种 import 方式：
+        #   (a) `from starter_kit import adapter`  →  __name__ = "starter_kit.adapter"
+        #   (b) `import adapter` (sys.path 指向 starter_kit/) → __name__ = "adapter"
+        if __package__:
+            from .structured_fallbacks import try_parse_structured
+        else:
+            from structured_fallbacks import try_parse_structured  # type: ignore
+    except Exception:  # 模块不存在 / 导入异常 → 静默跳过
         try_parse_structured = None  # type: ignore
     if try_parse_structured is not None:
         det_qasm = try_parse_structured(prompt, l2_oracle.synthesize_from_ops)

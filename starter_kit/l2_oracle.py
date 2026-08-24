@@ -365,11 +365,18 @@ def _num_from(prompt: str, patterns, allow_zh: bool = True) -> Optional[int]:
 # 注：中文单位（比特/量子比特/位）末尾不能用 \b（Unicode 中文间不存在词边界），
 # 用 (?!后面接更多中文单位字符) 作为软边界即可；阿拉伯和英文 \b 正常。
 _QUBIT_NUM_PATTERNS = [
-    # Arabic: 2比特 / 2 比特 / 2个比特 / 2 量子比特
+    # Arabic range "2 到 8 位" / "2~8 比特" / "3-7 位" —— 必须在单个之前，
+    # 否则 "2 到 8 位" 会被单个模式捕获 "8 位" 而取到上限；范围取捕获组 1（下限）。
+    r"(\d+)\s*(?:至|到|~|-)\s*(\d+)\s*个?\s*(?:量子比特|比特|量子位|qubit|位)",
+    # Arabic: 2比特 / 2 比特 / 2个比特 / 2 量子比特 / 2 位到 8 位（数字+单位+连接+数字+单位）
     r"(\d+)\s*个?\s*(?:量子比特|比特|qubit|qbit|位)(?![\u4e00-\u9fff]比特|量子比特)",
+    r"(\d+)\s*(?:位|比特|量子位|qubit).{0,4}(?:\d+)\s*(?:位|比特|量子位|qubit)",
     r"\b(\d+)-qubit\b",
     r"\b(\d+)q\b",
     r"q\[(\d+)\]",
+    # CJK range "三 到 七 位" / "三 ~ 八位" / "三个到七个比特" —— 必须在 single 之前：
+    # 否则 "三 到 七 位" 会先被 single 捕获 "七 位" 而取到上限；范围取捕获组 1（下限）。
+    r"([零一二两双三四五六七八九十幺俩])\s*个?\s*(?:至|到|~|-|\|).{0,4}[零一二两双三四五六七八九十幺俩]\s*个?\s*(?:位|比特|量子位)",
     # Chinese single digit: 两比特 / 两个比特 / 三量子比特 / 四位
     r"([零一二两双三四五六七八九十幺俩])\s*个?\s*(?:量子比特|比特|qubit|qbit|位)(?![\u4e00-\u9fff]比特|量子比特)",
 ]
@@ -387,15 +394,19 @@ def classify(prompt: str):
     # 0. code-fix prompt (gives a broken circuit and asks to repair). Check
     # BEFORE template rules so "制备贝尔态：H q[0]; CX q[0] q[1]; 代码报错请修复"
     # routes as "fix" first, then the caller re-classifies on the cleaned text.
+    # 零基础口语：粘错代码、写了…错了、帮我补完整、下面这段改成对的、粘贴过来报错
     if re.search(r"报错|错误|修好|修复|帮我修|语法错|修正.*电路|这段代码|下面代码|"
                  r"syntax\s*error|fix\s*(it|the)\s*(code|circuit)|repair\s*circuit|"
-                 r"wrong\s*capital|capitaliz|broken\s*circuit|gate\s*name\s*(is\s*)?wrong",
+                 r"wrong\s*capital|capitaliz|broken\s*circuit|gate\s*name\s*(is\s*)?wrong|"
+                 r"直接粘.*报错了|粘贴.*报错|(敲|写|做).*(错|漏|bug)|帮我补(完|齐|整|全)|"
+                 r"补.*creg|补.*include|补.*measure|改成对的|改好|语法.*(错|不对)|"
+                 r"中文标点|缺.*分号|门之间缺",
                  p, re.IGNORECASE):
         return None, None, None, "fix"
 
     # 1. backend selection (选哪个平台/后端) -> handled by caller
-    # 中文常见说法 + 英混/纯英说法：which backend / recommend / pick / choose /
-    # local simulator / platform for / 量子平台 / 跑 xxx 选
+    # 中文常见说法 + 英混/纯英说法 + 零基础口语（选啥平台啊 / 挑一个后端 / 去哪家跑 /
+    # 能立刻跑的平台 / 给推荐一个能 / 选啥量子 / 选一个量子平台 等）
     if re.search(
         r"选.*平台|选.*后端|选.*量子.*机|选.*(机器|设备|模拟器)|"
         r"推荐.*平台|推荐.*后端|推荐.*(设备|量子.*机|机器|真机|模拟器)|"
@@ -405,7 +416,11 @@ def classify(prompt: str):
         r"(recommend|suggest|pick|choose)\s*(me\s*)?(a|an|the\s*)?\s*(backend|platform|simulator|device|machine|qpu)\b|"
         r"(should\s+i|what\s+(backend|platform|simulator)\s+to|to\s+run\s+.*(choose|use|pick))|"
         r"local\s*simulator|for\s*free\s*/\s*no\s*cost|zero\s*queue\s*time|"
-        r"免费额度|排队时间|几小时排队|跑.*比特.*选|跑.*q\b.*选|模拟器运行",
+        r"免费额度|排队时间|几小时排队|跑.*比特.*选|跑.*q\b.*选|模拟器运行|"
+        r"选啥(平台|量子|后端|机器)|挑.*(后端|平台|量子.*机|模拟器)|去哪家(跑|做)|"
+        r"给推荐一个.*(能|可以)跑|立刻跑的.*平台|上真机|想上真机|预算.*(零|0|不花钱|免费)|"
+        r"不想花钱.*(排|跑)|跑.*位.*(选|挑)|跑.*量子位.*(选|挑)|最多半天.*(接受|可以).*(后端|平台)|"
+        r"(哪家|那个|哪个).*能.*跑|可以试用|先不跑真机|今天交作业",
         p, re.IGNORECASE
     ):
         return None, None, None, "backend_select"
@@ -430,7 +445,14 @@ def classify(prompt: str):
         p, re.IGNORECASE
     ):
         # W 态（D(n,1) Dicke 单激发）最小 n>=3；q[]/qubit/qbit 片段显式索引兜底
-        qidx_frag = [int(x) for x in re.findall(r"q\[(\d+)\]", p)]
+        # —— 注意排除 "qreg q[N]" 声明（N 是寄存器大小，不是 qubit 索引），
+        # 否则 "帮我修 qreg q[1] / x x q[0]" 这种碎句会把 qmax 错算成 1→Bell 态。
+        _qg = re.findall(
+            r"(?:h|x|s|sdg|t|tdg|cx|cnot|ccx|toffoli|swap|ry|rz|rx|cu1|measure|barrier|u1|u2|u3)"
+            r"[^;\n]*?q\[(\d+)\]", p, re.IGNORECASE)
+        if not _qg:
+            _qg = re.findall(r"(?<!qreg\s)q\[(\d+)\]", p, re.IGNORECASE)
+        qidx_frag = [int(x) for x in _qg]
         frag_n = (max(qidx_frag) + 1) if qidx_frag else None
         n = max(3, min(np_ or frag_n or 3, 8))
         # W2 在教科书定义上不是 W 态（等价 Bell，Bell 分支先吃即可）
@@ -441,17 +463,18 @@ def classify(prompt: str):
             return qasm, expected, f"W 态({n} 比特)", "template"
 
     # 2. Bell / EPR （优先于 GHZ，因为"纠缠对/EPR/bell-like"都明确是 2 比特）
-    # 补充：纯英 "entangled pair / entangled state / maximally entangled + np_==2" 也是 Bell。
+    # 零基础口语：两枚硬币同步翻 / 同步硬币 / 都正都反 / 两(枚|粒|个)硬币 + 同步/一致/纠缠
     # 注意：CJK 字符附近 \b（词边界）不生效，要用 (?<![a-z])/(?![a-z]) 代替裸 \b。
-    # 注意：如果用户同时写了 "W / 对称纠缠"（上一节前哨已拦截），不会走到这里。
     _BELL_RE = (r"(?<![a-z])(bell|epr|epr-pair|entangled\s*pair|entangled\s*state|"
-                r"maximally\s*entangled)(?![a-z])|贝尔|纠缠对|bell-like")
+                r"maximally\s*entangled)(?![a-z])|贝尔|纠缠对|bell-like|"
+                r"两.*硬币.*(同步|一致|纠缠|都正|都反)|"
+                r"(同步|永远同步|一致).*(硬币|量子硬币|qubit|比特位)|"
+                r"要么都正要么都反|(正|反).*(正|反).*各一半.*(硬币|纠缠)")
     if re.search(_BELL_RE, p, re.IGNORECASE) and not re.search(
             r"\bw[-\s]*态\b|w\s*state|单\s*激\s*发|对\s*称\s*纠\s*缠|只\s*有\s*一\s*个\s*1", p, re.IGNORECASE):
         return ghz_qasm(2), {"00": 0.5, "11": 0.5}, "Bell 态(2 比特)", "template"
     # "两比特最大纠缠 / 最大纠缠态 + np_==2 / 2q+纠缠 / 双比特纠缠态" — 仍是 Bell
     # 必须先于 GHZ 全局 "最大纠缠" 分支。np_==2 且含中文"纠缠"或 entangled 即命中
-    # （"纠缠"已涵盖"最大纠缠/纠缠态/纠缠对"，故这里不再单列）。
     if np_ is not None and np_ == 2 and (
         "纠缠" in p or "entangled" in p
     ):
@@ -460,9 +483,16 @@ def classify(prompt: str):
         return ghz_qasm(2), {"00": 0.5, "11": 0.5}, "Bell 态(2 比特)", "template"
 
     # 2.5 中文"纠缠"兜底（无比特数的多比特纠缠；明确 2 比特已被上方 Bell 分支抢走）
+    # 零基础比喻：N 胞胎纠缠 / N 个硬币同时正或同时反 / 同生共死那种 / 多胞胎纠缠起来
     # 覆盖"互相纠缠/全部纠缠/都纠缠/做个纠缠/纠缠起来/纠缠在一起"等口语，
     # 使它们命中模板 + 保真度校验，而不是落入 LLM 无校验自由合成。
-    if re.search(r"互相纠缠|全部纠缠|都纠缠|做个纠缠|纠缠起来|纠缠在一起", p):
+    if re.search(r"互相纠缠|全部纠缠|都纠缠|做个纠缠|纠缠起来|纠缠在一起|"
+                 r"胞胎纠缠|多胞胎.*纠缠|(同正|同反).*(三|四|五|六|七|八).*(枚|个|粒|位)|"
+                 r"(三|四|五|六|七|八).*(胞胎|硬币|量子位).*(同正|同反|都正|都反)|"
+                 r"同时正.*同时反|要么全.*要么全.*", p) or (
+        # 范围比特数 + "纠缠"单字：如"三 到 七 位纠缠"（np_ 已由范围解析取下限）
+        "纠缠" in p and np_ is not None and np_ >= 3
+    ):
         n = max(2, min(np_ if np_ else 3, 8))
         return ghz_qasm(n), {"0" * n: 0.5, "1" * n: 0.5}, f"GHZ 态({n} 比特)", "template"
 
@@ -472,11 +502,25 @@ def classify(prompt: str):
         return ghz_qasm(n), {"0" * n: 0.5, "1" * n: 0.5}, f"GHZ 态({n} 比特)", "template"
 
     # 5/6. superposition (single / uniform n-qubit)
+    #    零基础口语：丢硬币 / 扔硬币 / 抛硬币 / 正反面各一半 / 掷硬币（1q H 叠加）；
+    #    N 位全部 H → 2^N 个结果等概率；抽屉各一半概率；公平硬币；50/50；随机出 0/1
     #    结构化合成关键词已在 1b 拦截，这里命中的就是纯"均匀/叠加态"模板请求
-    if "叠加" in prompt or "superposition" in p or re.search(r"等概率.*(分布|结果|测量)", p) or (
-        "均匀" in p and not re.search(r"压缩|rz\(|qft", p)
-    ):
-        if "单比特" in p or re.search(r"\b1\s*(比特|qubit)", p):
+    _SINGLESUPER_HINT = (r"丢.*硬币|抛.*硬币|扔.*硬币|掷硬币|硬币.*正反面各一半|"
+                         r"硬币.*(50|50%|一半|公平|随机|正).*(50|50%|一半|反|1)|"
+                         r"50.*50.*概率|公平硬币|单个硬币|一个硬币|丢.*正反面|"
+                         r"正.*反.*各一半.*电路|一半.*一半.*(量子|电路|比特)")
+    _UNIFORM_HINT = (r"等概率.*(分布|结果|测量|输出)|均匀.*(叠加|态|分布)|所有.*等概率|"
+                     r"全.*(叠加|h.*门|hadamard)|每.*(叠加|h.*门|hadamard)|"
+                     r"全测量.*(叠加|均匀|等概率)")
+    if ("叠加" in prompt or "superposition" in p or
+            re.search(_UNIFORM_HINT, p) or
+            ("均匀" in p and not re.search(r"压缩|rz\(|qft", p)) or
+            re.search(_SINGLESUPER_HINT, p)):
+        # 单比特：明确 1 位 / 一枚硬币 / 单个 / 0|1 随机
+        singles = bool(re.search(r"(单|一|1).*(比特|qubit|位|硬币|枚)|1\s*(量子|比特)|"
+                                 r"(单个|一枚).*(硬币|比特)|随机出\s*[0\/\|]?\s*1\s*[或、和\/\|]?\s*0\b",
+                                 p, re.IGNORECASE))
+        if "单比特" in p or singles:
             n = 1
         else:
             n = max(1, min(np_ if np_ else 3, 8))
@@ -546,6 +590,27 @@ def _select_backend(prompt: str) -> Optional[str]:
 
     np_ = _num_from(prompt, _QUBIT_NUM_PATTERNS)
     required_qubits = np_ if np_ else 1
+    # 零基础口语："2 位到 8 位" / "3 到 7 位就够" / "2 个到 8 个量子位" 这种范围词
+    # → 取最大值（保证后端能跑上界）。_num_from 只抓第一个，所以自己再跑一次 all matches。
+    try:
+        import re as _re
+        extra = []
+        for pat in _QUBIT_NUM_PATTERNS:
+            for mm in _re.finditer(pat, prompt):
+                for tok in mm.groups():
+                    if not tok: continue
+                    tok = str(tok).strip()
+                    if tok.isdigit():
+                        extra.append(int(tok))
+                    elif tok in _ZH_DIGIT:
+                        extra.append(_ZH_DIGIT[tok])
+        # 中文范围："数字 到 数字 位" 和 "数字 ～ 数字 位" 再单独兜底
+        for m in _re.finditer(r"(\d+)\s*(?:到|至|~|～|-|\|)\s*(\d+)\s*(?:个)?\s*(?:位|比特|量子位|qubit)?", prompt, _re.I):
+            extra.append(int(m.group(1))); extra.append(int(m.group(2)))
+        if extra:
+            required_qubits = max(required_qubits, max(extra))
+    except Exception:
+        pass
 
     # Prefer "真机 / real / 物理" -> filter by is_simulator? table lacks the flag, so
     # we treat "spinq_cloud_qpu" and "originq_wukong" as real machines.

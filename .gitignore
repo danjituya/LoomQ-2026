@@ -44,6 +44,9 @@ _tmp_sf2.py
 LoomQ-*指令.md
 real_results.json
 run_all_real.py
+L2-零基础交互测试集.json
+_l2_eval_zero.py
+l2_zero_result.json
 
 # IDE
 .idea/
