@@ -5,3 +5,8 @@
 **/.DStore
 __pycache__/
 *.py[cod]
+
+# Local test artifacts
+.venv/
+report.json
+*.pyc

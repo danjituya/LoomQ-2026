@@ -1,5 +1,9 @@
-# Public evaluator baseline: no third-party dependencies.
-# Add project dependencies below and pin every version exactly, for example:
-# amazon-braket-sdk==<tested-version>
-# spinqit==<tested-version>
-# pyqpanda==<tested-version>
+# LoomQ submission dependencies - pinned exactly.
+# Official build container: python:3.10-slim (Linux).
+# NOTE: spinqit is intentionally NOT listed here: its dependency chain
+# (antlr4-python3-runtime==4.9.2, numpy<2.0.0, torch, python-igraph==0.9.10,
+# pycryptodome==3.11.0) conflicts with amazon-braket-sdk and pyqpanda, which
+# would make `pip install -r requirements.txt` fail in the official container.
+# adapter.run("spinq", ...) degrades gracefully when spinqit is absent.
+amazon-braket-sdk==1.110.1
+pyqpanda==3.8.5
