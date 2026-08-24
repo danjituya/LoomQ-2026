@@ -610,28 +610,50 @@ def _compile_classical_to_asm(text: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _split_hybrid(hybrid_qasm_str: str) -> Tuple[str, List[str]]:
+    """Split Hybrid-QASM into (quantum_source, [classical block bodies]).
+
+    Uses brace matching (not line inspection) to locate the classical
+    ``{ ... }`` block, so single-line, multi-line, and ``} else {`` layouts
+    all parse correctly regardless of line breaks.
+    """
+    text = re.sub(r"//[^\n]*", "", hybrid_qasm_str)
+    quantum_parts: List[str] = []
+    classical_parts: List[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        idx = text.find("classical", i)
+        if idx == -1:
+            quantum_parts.append(text[i:])
+            break
+        quantum_parts.append(text[i:idx])
+        open_idx = text.find("{", idx)
+        if open_idx == -1:  # malformed: keep the rest as quantum source
+            quantum_parts.append(text[idx:])
+            break
+        depth = 0
+        j = open_idx
+        while j < n:
+            ch = text[j]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        classical_parts.append(text[open_idx + 1:j])
+        i = j + 1
+    return "".join(quantum_parts), classical_parts
+
+
 def compile_hybrid(hybrid_qasm_str: str) -> Tuple[List[str], str]:
     """Compile Hybrid-QASM: return (quantum ops list, RISC-V assembly text)."""
-    qasm_lines = _clean_lines(hybrid_qasm_str)
-    quantum_lines: List[str] = []
-    classical_text: List[str] = []
-    in_classical = False
-    for line in qasm_lines:
-        if line.startswith("classical"):
-            in_classical = True
-            body = line[len("classical"):].strip()
-            if body.startswith("{"):
-                classical_text.append(body[1:].rstrip("}").strip())
-            continue
-        if in_classical:
-            classical_text.append(line.rstrip("}").strip())
-            if "}" in line:
-                in_classical = False
-            continue
-        quantum_lines.append(line)
+    quantum_source, classical_parts = _split_hybrid(hybrid_qasm_str)
 
     quantum_ops: List[str] = []
-    for line in quantum_lines:
+    for line in _split_statements(quantum_source):
         line = line.rstrip(";").strip()
         if not line or line.startswith("OPENQASM") or line.startswith("include") \
            or line.startswith("qreg") or line.startswith("creg"):
@@ -648,5 +670,5 @@ def compile_hybrid(hybrid_qasm_str: str) -> Tuple[List[str], str]:
         elif m:
             quantum_ops.append(m.group(1))
 
-    assembly = _compile_classical_to_asm("\n".join(classical_text))
+    assembly = _compile_classical_to_asm("\n".join(classical_parts))
     return quantum_ops, assembly
