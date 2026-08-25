@@ -498,7 +498,12 @@ def classify(prompt: str):
         return ghz_qasm(n), {"0" * n: 0.5, "1" * n: 0.5}, f"GHZ 态({n} 比特)", "template"
 
     # 3. GHZ-n (3+ 比特时才命中；Bell 分支已抢在前面)
-    if "ghz" in p or "吉布斯" in p or "最大纠缠" in p or "所有比特关联" in p:
+    #    同义词：猫态/cat state（GHZ 最常见别名，源自薛定谔猫）、薛定谔的猫、
+    #    死猫/活猫、绿伯格-霍恩-泽林格（Greenberger-Horne-Zeilinger 音译）。
+    #    "薛定谔方程"等教学表述不含 猫/态 紧邻，不误伤。
+    if ("ghz" in p or "吉布斯" in p or "最大纠缠" in p or "所有比特关联" in p or
+            re.search(r"猫态|cat[\s-]*state|薛定谔.{0,2}(猫|态)|死猫|活猫|绿伯格",
+                      p, re.IGNORECASE)):
         n = max(2, min(np_ if np_ else 3, 8))
         return ghz_qasm(n), {"0" * n: 0.5, "1" * n: 0.5}, f"GHZ 态({n} 比特)", "template"
 
@@ -544,7 +549,7 @@ def classify(prompt: str):
         return superposition_qasm(n), uniform_expected(n), f"均匀叠加态({n} 比特)", "template"
 
     # 7. teleportation
-    if re.search(r"隐形传态|teleport|传态|把q0.*q2|状态.*传到", p):
+    if re.search(r"隐形传态|teleport|传态|把q0.*q2|状态.*传到|量子传[送输]", p, re.IGNORECASE):
         return TEMPLATES["TELEPORT"], None, "量子隐形传态", "template"
 
     # 8. QFT-n (结构化合成 hint: "预处理 QFT + RZ 压缩" 已在 1b 拦截)
@@ -555,7 +560,7 @@ def classify(prompt: str):
     # 9. Grover
     # 触发词含"标记<01串>"与"target<01串>"：即使 prompt 没写 grover/搜索，
     # 只要明确给出目标标记就按 Grover 处理（如"标记 110"、"target=001"）。
-    if re.search(r"grover|搜索|找标记|在.*找|目标标记|标记\s*[01]{2,}|target\s*[:=]?\s*[01]{2,}", p):
+    if re.search(r"grover|格罗弗|格洛弗|搜索|找标记|在.*找|目标标记|标记\s*[01]{2,}|target\s*[:=]?\s*[01]{2,}", p):
         # 目标标记动态解析：标记<串> / target<串> / 裸二进制串（如"搜索 110"），
         # 解析不到默认 010。电路与期望分布都随标记变化（见 grover3_qasm /
         # grover3_expected），不再硬编码 010。
@@ -566,7 +571,8 @@ def classify(prompt: str):
     # 10. Deutsch-Jozsa（仅"纯 DJ/平衡/常数函数/判断函数"命中；若用户提
     #    "Deutsch-Jozsa：平衡函数 f(00)=0..."且写了 oracle 实现要求 -> hint
     #    "实现 oracle = CX..."已在 1b 结构化合成走 structured）
-    if re.search(r"(纯|标准|演示|经典|作业题目)\s*deutsch|deutsch\s*$|deutsch[-\s]*jozsa\s*$|平衡函数|常数函数|判断.*函数", p):
+    if re.search(r"(纯|标准|演示|经典|作业题目)\s*deutsch|deutsch\s*$|deutsch[-\s]*jozsa\s*$|"
+                 r"平衡函数|常数函数|判断.*函数|多伊奇|德义奇|dj\s*(算法|问题)", p):
         return TEMPLATES["DJ_BALANCED"], None, "Deutsch–Jozsa(平衡函数)", "template"
 
     # 11. adder

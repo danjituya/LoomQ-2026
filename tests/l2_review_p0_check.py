@@ -90,6 +90,38 @@ def main():
             f"got={got}",
         )
 
+    # ---- 同义词/音译覆盖（评审 P1：猫态/cat state 等 GHZ 别名缺失）----
+    for q, want in (
+        ("构造一个 3 量子比特的猫态并全测量", "GHZ 态(3 比特)"),
+        ("create a 4-qubit cat state", "GHZ 态(4 比特)"),
+        ("create a 4-qubit cat-state", "GHZ 态(4 比特)"),
+        ("薛定谔猫态 3 比特", "GHZ 态(3 比特)"),
+        ("薛定谔的猫，4 个比特", "GHZ 态(4 比特)"),
+        ("绿伯格-霍恩-泽林格态 3 比特", "GHZ 态(3 比特)"),
+        ("格罗弗搜索 3 比特标记 101", "Grover"),
+        ("格洛弗算法找 110", "Grover"),
+        ("多伊奇-约萨算法：平衡函数", "Deutsch"),
+        ("德义奇问题：常数函数", "Deutsch"),
+        ("量子传送 2 比特", "隐形传态"),
+    ):
+        r = classify(q)
+        got = r[2] if r else None
+        all_ok &= check(
+            f"同义词: {q[:30]!r} -> {want}",
+            got is not None and want in got,
+            f"got={got}",
+        )
+
+    # 同义词防误伤: 教学/无关表述不得命中 GHZ
+    for q in ("薛定谔方程是什么", "cat 是什么动物"):
+        r = classify(q)
+        got = r[2] if r else None
+        all_ok &= check(
+            f"同义词防误伤: {q[:30]!r} 不命中 GHZ",
+            got is None or "GHZ" not in got,
+            f"got={got}",
+        )
+
     print()
     print("结论:", "ALL PASS" if all_ok else "SOME FAIL")
     sys.exit(0 if all_ok else 1)
